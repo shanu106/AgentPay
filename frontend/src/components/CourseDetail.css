@@ -1,0 +1,286 @@
+.course-detail-page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.back-link {
+  color: #6c63ff;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  display: inline-block;
+  margin-bottom: 24px;
+  transition: color 0.3s;
+}
+
+.back-link:hover {
+  color: #a29bfe;
+}
+
+.course-detail-header {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 40px;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  margin-bottom: 40px;
+}
+
+.detail-category {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(108, 99, 255, 0.15);
+  color: #6c63ff;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.detail-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+
+.detail-subtitle {
+  font-size: 1.05rem;
+  color: #8888aa;
+  margin-bottom: 20px;
+}
+
+.detail-meta {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.meta-item {
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.detail-instructor {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+}
+
+.instructor-avatar-large {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6c63ff, #4834d4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.instructor-name {
+  font-weight: 600;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+}
+
+.instructor-role {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 2px;
+}
+
+.detail-pricing {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.detail-current-price {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #6c63ff;
+}
+
+.detail-original-price {
+  font-size: 1.1rem;
+  color: #666;
+  text-decoration: line-through;
+}
+
+.detail-discount {
+  padding: 4px 10px;
+  background: rgba(0, 184, 148, 0.2);
+  color: #00b894;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.btn-enroll {
+  display: inline-block;
+  background: linear-gradient(135deg, #6c63ff, #4834d4);
+  color: white;
+  padding: 16px 40px;
+  border-radius: 12px;
+  text-decoration: none;
+  font-size: 1.05rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  text-align: center;
+}
+
+.btn-enroll:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(108, 99, 255, 0.4);
+}
+
+.course-detail-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.course-detail-image img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
+.course-detail-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.detail-section {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 28px;
+}
+
+.detail-section h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+
+.detail-description {
+  color: #aaa;
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+
+.learning-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.learning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.check-icon {
+  color: #00b894;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.curriculum {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.curriculum-item {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.curriculum-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  color: #ddd;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  transition: background 0.3s;
+}
+
+.curriculum-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.curriculum-icon {
+  font-size: 0.7rem;
+  color: #6c63ff;
+  flex-shrink: 0;
+}
+
+.curriculum-title {
+  flex: 1;
+  text-align: left;
+}
+
+.curriculum-meta {
+  color: #888;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.curriculum-content {
+  padding: 0 18px 14px;
+  color: #888;
+  font-size: 0.85rem;
+  display: none;
+}
+
+.curriculum-item.expanded .curriculum-content {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .course-detail-header {
+    grid-template-columns: 1fr;
+    padding: 24px;
+  }
+  .detail-title {
+    font-size: 1.6rem;
+  }
+  .learning-grid {
+    grid-template-columns: 1fr;
+  }
+  .course-detail-image {
+    display: none;
+  }
+}

@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+*/node_modules/
+*/*/node_modules/
+
+# Environment Variables & Secrets (CRITICAL: Never commit real keys)
+.env
+.env.*
+!.env.example
+!*.env.example
+!*/*/.env.example
+
+# Build Outputs
+dist/
+*/dist/
+*/*/dist/
+dist-ssr/
+build/
+.output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Files
+.DS_Store
+*/.DS_Store
+*/*/.DS_Store
+Thumbs.db
+
+# IDE & Editor Settings
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary files & cache
+.cache/
+.vite/
+*/.vite/
+*/*/.vite/
+.temp/
+.tmp/
+Buying Agent/AI_SHOPPING_AGENT_IMPLEMENTATION.md
