@@ -1,9 +1,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { toolDeclarations, executeTool, buyerOrders, auditLogs } = require('../tools/index');
 const merchantService = require('./merchant.service');
+const { resolvePaymentMethod } = require('./paymentMethods');
 
 const SYSTEM_PROMPT = `You are a trusted, intelligent AI Shopping Buyer Agent.
-Your job is to help the user purchase courses/products according to their explicit requirements using Razorpay Test Mode.
+Your job is to help the user purchase courses/products/food according to their explicit requirements using Razorpay Test Mode.
 
 Rules (Mandatory):
 1. Never exceed the user's authorized maximum spending amount.
@@ -19,12 +20,12 @@ Rules (Mandatory):
 11. If payment fails, report the failure and do not claim the order succeeded.
 
 Agent Purchase Workflow:
-1. Parse user query, requested topic, and maximum price limit.
+1. Parse user query, requested topic, quantity, payment method preference, and maximum price limit.
 2. Call searchProducts() to discover candidates.
 3. Call getProduct() and checkAvailability() for the best candidate.
-4. Call createOrder() to let the backend validate authorization and create the order.
+4. Call createOrder() with quantity to let the backend validate authorization and create the order.
 5. Call initiatePayment() to obtain the Razorpay payment order.
-6. Provide a clear summary and instruct the user to complete Razorpay test checkout.`;
+6. Provide a clear summary and execute autonomous payment.`;
 
 /**
  * Helper: Extract structured intent from natural language prompt
@@ -43,60 +44,48 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     hasExplicitBudget = true;
   }
 
-  // 2. Dynamic & Comprehensive Topic Recognition (Ordered by Specificity)
-  let query = '';
-  if (text.includes('keyboard') || text.includes('keychron') || text.includes('mechanical')) {
-    query = 'keyboard';
-  } else if (text.includes('headphone') || text.includes('earphone') || text.includes('earbuds') || text.includes('sony') || text.includes('anc') || text.includes('audio')) {
-    query = 'headphones';
-  } else if (text.includes('charger') || text.includes('gan') || text.includes('adapter') || text.includes('power delivery')) {
-    query = 'charger';
-  } else if (text.includes('mouse') || text.includes('logitech') || text.includes('trackball')) {
-    query = 'mouse';
-  } else if (text.includes('fitness') || text.includes('smartwatch') || text.includes('smart band') || text.includes('fitbit') || text.includes('tracker')) {
-    query = 'fitness tracker';
-  } else if (text.includes('sleeve') || text.includes('laptop bag') || text.includes('case') || text.includes('bellroy')) {
-    query = 'laptop sleeve';
-  } else if (text.includes('ai & machine learning') || text.includes('ai and machine learning') || text.includes('machine learning') || text.includes('deep learning') || text.includes('ai ml') || text.includes('artificial intelligence') || /\bai\b/i.test(text) || text.includes('neural')) {
-    query = 'AI & Machine Learning';
-  } else if (text.includes('node') || text.includes('express') || text.includes('backend')) {
-    query = 'Node.js';
-  } else if (text.includes('fullstack') || text.includes('full stack') || text.includes('full-stack')) {
-    query = 'Full Stack';
-  } else if (text.includes('dsa') || text.includes('data structure') || text.includes('algorithm') || text.includes('leetcode')) {
-    query = 'DSA';
-  } else if (text.includes('python') || text.includes('data science') || text.includes('pandas') || text.includes('numpy')) {
-    query = 'Python';
-  } else if (text.includes('react') || text.includes('next.js') || text.includes('nextjs') || text.includes('frontend')) {
-    query = 'React';
-  } else if (text.includes('typescript') || text.includes('ts course') || text.includes(' ts ')) {
-    query = 'TypeScript';
-  } else if (text.includes('javascript') || text.includes('js mastery') || text.includes('js course') || text.includes(' js ') || text.endsWith(' js')) {
-    query = 'JavaScript';
-  } else if (text.includes('devops') || text.includes('docker') || text.includes('kubernetes') || text.includes('aws') || text.includes('cloud')) {
-    query = 'DevOps';
-  } else {
-    // Dynamic NLP extractor: strip common request boilerplate and extract the actual subject
-    let cleaned = text
-      .replace(/buy me (a|an)?/gi, '')
-      .replace(/find me (a|an)?/gi, '')
-      .replace(/purchase (a|an)?/gi, '')
-      .replace(/i want (a|an)?/gi, '')
-      .replace(/get me (a|an)?/gi, '')
-      .replace(/i only added a prompt for (a|an)?/gi, '')
-      .replace(/a prompt for (a|an)?/gi, '')
-      .replace(/course (of|with|under|below|up to|upto|for|worth).*/gi, '')
-      .replace(/(of|with|under|below|up to|upto|worth upto|worth up to|worth|for|budget|price).*/gi, '')
-      .replace(/course/gi, '')
-      .replace(/good ratings?/gi, '')
-      .replace(/best/gi, '')
-      .trim();
+  // 2. Extract requested quantity (e.g., "2 biryani", "three pizzas", "2 keyboards", "a pair of")
+  let quantity = 1;
+  const wordQtyMap = { 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'double': 2, 'pair': 2, 'triple': 3 };
+  for (const [w, q] of Object.entries(wordQtyMap)) {
+    const reg = new RegExp(`\\b${w}\\b\\s*(?:plates|pieces|units|sets|dishes|box|boxes|of)?`, 'i');
+    if (reg.test(text)) {
+      quantity = q;
+      break;
+    }
+  }
+  const qtyMatch = text.match(/\b([1-9]|1\d|20)\s*(?:x|pcs|pieces|plates|sets|units|box|boxes)?\s*(?:of\s+)?([a-z\s]+)/i);
+  if (qtyMatch && parseInt(qtyMatch[1], 10) <= 20) {
+    const possibleQty = parseInt(qtyMatch[1], 10);
+    if (!text.includes(`under ${possibleQty}`) && !text.includes(`upto ${possibleQty}`) && !text.includes(`worth ${possibleQty}`) && !text.includes(`below ${possibleQty}`)) {
+      quantity = possibleQty;
+    }
+  }
 
-    query = cleaned.length > 0 ? cleaned : 'keyboard';
+  // 3. Specific Topic & Dish Name Extractor
+  let cleaned = text
+    .replace(/\b(buy|order|purchase|get|want|find|give)\s+(me\s+)?(a|an)?\s*/gi, '')
+    .replace(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|double|triple|pair)\s*(x|pcs|pieces|plates|sets|units|box|boxes)?\s*(of\s+)?/gi, '')
+    .replace(/\s+(and\s+)?(pay|paying|paid)\s+(using|with|via|by)\s+.*$/gi, '')
+    .replace(/\s+(and\s+)?using\s+(visa|mastercard|card|credit card|debit card|bob|sbi|hdfc|icici|upi|netbanking|net banking).*$/gi, '')
+    .replace(/\s+(of\s+price|at\s+price|price|budget|worth|under|below|up to|upto|for).*$/gi, '')
+    .replace(/\b(course|product|item|food|please|thanks|thank you|now|good|best|top|rating|ratings)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let query = cleaned;
+  if (!query || query.length === 0) {
+    if (text.includes('mutton') && text.includes('biryani')) query = 'kolkata mutton dum biryani';
+    else if (text.includes('paneer') && text.includes('biryani')) query = 'paneer biryani';
+    else if (text.includes('biryani')) query = 'chicken biryani';
+    else if (text.includes('keyboard')) query = 'keyboard';
+    else if (text.includes('headphone')) query = 'headphones';
+    else query = 'biryani';
   }
 
   return {
     query,
+    quantity,
     maxPrice,
     hasExplicitBudget,
     currency: 'INR',
@@ -117,8 +106,13 @@ const processPurchaseRequest = async ({
   merchantApiBase
 }) => {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
-  const cardLimit = Number(savedPaymentMethod?.autoDebitLimit) || 15000;
+  
+  // Resolve dynamic payment method from user prompt (Cards, NetBanking, UPI, or Default Saved Method)
+  const paymentMethod = resolvePaymentMethod(message, savedPaymentMethod);
+  const cardLimit = Number(paymentMethod.autoDebitLimit || savedPaymentMethod?.autoDebitLimit || 15000);
+  
   const intent = extractPurchaseIntent(message, cardLimit);
+  intent.paymentMethod = paymentMethod;
 
   // Strict Dual-Boundary Spending Limits:
   // 1. If user gave prompt limit (e.g. 5000), effective limit is min(5000, cardLimit)
@@ -138,7 +132,8 @@ const processPurchaseRequest = async ({
     },
     customerName,
     customerEmail,
-    savedPaymentMethod,
+    paymentMethod,
+    savedPaymentMethod: paymentMethod,
     autoExecutePayment,
     merchantApiBase
   };
@@ -155,10 +150,12 @@ const processPurchaseRequest = async ({
     });
   };
 
+  const paymentLabel = paymentMethod.matchedFromPrompt ? `Payment Method: "${paymentMethod.label}" (Prompt Match ✓)` : `Payment Method: "${paymentMethod.label}" (Default ✓)`;
+
   if (intent.hasExplicitBudget) {
-    addStep(`Understanding purchase intent: Query="${intent.query}", Prompt Budget=₹${intent.maxPrice.toLocaleString()} (Pre-Saved Limit: ₹${cardLimit.toLocaleString()})`);
+    addStep(`Understanding purchase intent: Query="${intent.query}", Qty=${intent.quantity}, Budget=₹${intent.maxPrice.toLocaleString()}, ${paymentLabel}`);
   } else {
-    addStep(`Understanding purchase intent: Query="${intent.query}", Enforcing Pre-Authorized Limit=₹${cardLimit.toLocaleString()}`);
+    addStep(`Understanding purchase intent: Query="${intent.query}", Qty=${intent.quantity}, Pre-Auth Limit=₹${cardLimit.toLocaleString()}, ${paymentLabel}`);
   }
 
   // Fallback Rule-Based Agent Engine if Gemini API key is placeholder
@@ -324,26 +321,51 @@ const runSimulatedBuyerAgent = async ({
     };
   }
 
-  // Step 2: Select top product and getProduct
-  const candidate = searchResult.products[0];
+  // Step 2: Rerank and select top candidate
+  const qWords = intent.query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+  const rankedCandidates = [...searchResult.products].map(prod => {
+    const pTitle = prod.title.toLowerCase();
+    let score = 0;
+    if (pTitle.includes(intent.query.toLowerCase())) score += 100;
+    qWords.forEach(w => {
+      if (pTitle.includes(w)) {
+        if (['mutton', 'chicken', 'paneer', 'kolkata', 'hyderabadi', 'whopper', 'nutella', 'dimsum', 'waffle', 'pizza', 'keychron', 'sony'].includes(w)) {
+          score += 25;
+        } else {
+          score += 10;
+        }
+      }
+    });
+    if (intent.query.includes('mutton') && pTitle.includes('chicken')) score -= 50;
+    if (intent.query.includes('chicken') && pTitle.includes('mutton')) score -= 50;
+    if (intent.query.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 50;
+    return { ...prod, matchScore: score };
+  }).sort((a, b) => b.matchScore - a.matchScore);
+
+  const candidate = rankedCandidates[0];
   const productDetails = await executeTool('getProduct', { productId: candidate.id }, sessionContext);
   toolCalls.push({ tool: 'getProduct', args: { productId: candidate.id }, result: productDetails });
+  
+  const quantity = intent.quantity || 1;
+  const unitPrice = productDetails.price;
+  const totalExpectedAmount = unitPrice * quantity;
+
   steps.push({
-    text: `Selected top candidate: "${productDetails.title}" (Rating: ${productDetails.rating}⭐, Authoritative Price: ₹${productDetails.price})`,
+    text: `Selected top candidate: "${productDetails.title}" (Rating: ${productDetails.rating}⭐, Unit Price: ₹${unitPrice}${quantity > 1 ? ', Total for ' + quantity + 'x: ₹' + totalExpectedAmount : ''})`,
     status: 'completed'
   });
 
-  // Strict Pre-Authorization Check
-  if (productDetails.price > intent.maxPrice) {
-    const limitLabel = intent.hasExplicitBudget ? `prompt budget limit (₹${intent.maxPrice.toLocaleString()})` : `pre-authorized card limit (₹${intent.maxPrice.toLocaleString()})`;
+  // Strict Pre-Authorization Check against total order amount
+  if (totalExpectedAmount > intent.maxPrice) {
+    const limitLabel = intent.hasExplicitBudget ? `prompt budget limit (₹${intent.maxPrice.toLocaleString()})` : `pre-authorized spending limit (₹${intent.maxPrice.toLocaleString()})`;
     steps.push({
-      text: `Pre-Authorization Blocked: Product price ₹${productDetails.price} exceeds ${limitLabel}.`,
+      text: `Pre-Authorization Blocked: Total order price ₹${totalExpectedAmount} exceeds ${limitLabel}.`,
       status: 'denied'
     });
     return {
       success: false,
       intent,
-      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\nThe product **${productDetails.title}** costs **₹${productDetails.price.toLocaleString()}**, which exceeds your **${limitLabel}**. No payment was charged.`,
+      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\nThe order for **${quantity > 1 ? quantity + 'x ' : ''}${productDetails.title}** costs **₹${totalExpectedAmount.toLocaleString()}** (₹${unitPrice} × ${quantity}), which exceeds your **${limitLabel}**. No payment was charged.`,
       steps,
       toolCalls,
       selectedProduct: productDetails,
@@ -356,13 +378,13 @@ const runSimulatedBuyerAgent = async ({
   const availResult = await executeTool('checkAvailability', { productId: candidate.id }, sessionContext);
   toolCalls.push({ tool: 'checkAvailability', args: { productId: candidate.id }, result: availResult });
   steps.push({
-    text: `Availability checked on merchant: Available for purchase`,
+    text: `Availability checked on merchant: Available for purchase (${quantity} unit${quantity > 1 ? 's' : ''})`,
     status: 'completed'
   });
 
   // Step 4: createOrder (Authorization check + order creation)
-  const orderResult = await executeTool('createOrder', { productId: candidate.id, quantity: 1 }, sessionContext);
-  toolCalls.push({ tool: 'createOrder', args: { productId: candidate.id, quantity: 1 }, result: orderResult });
+  const orderResult = await executeTool('createOrder', { productId: candidate.id, quantity }, sessionContext);
+  toolCalls.push({ tool: 'createOrder', args: { productId: candidate.id, quantity }, result: orderResult });
 
   if (orderResult.status === 'denied' || !orderResult.orderId) {
     steps.push({
@@ -372,7 +394,7 @@ const runSimulatedBuyerAgent = async ({
     return {
       success: false,
       intent,
-      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\n${orderResult.error}\n\nThe product **${productDetails.title}** costs **₹${productDetails.price}**, which exceeds your requested maximum limit of **₹${intent.maxPrice}**.`,
+      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\n${orderResult.error}\n\nThe order costs **₹${totalExpectedAmount}**, which exceeds your maximum limit of **₹${intent.maxPrice}**.`,
       steps,
       toolCalls,
       selectedProduct: productDetails,
@@ -381,12 +403,15 @@ const runSimulatedBuyerAgent = async ({
     };
   }
 
+  const activeMethod = sessionContext.paymentMethod || savedPaymentMethod;
+  const methodLabel = activeMethod.label || `${activeMethod.brand || 'Saved Card'} (•••• ${activeMethod.last4 || '1007'})`;
+
   steps.push({
-    text: `Pre-Authorization Verified: Price ₹${orderResult.amount} <= Budget Limit ₹${intent.maxPrice} & Pre-Saved Card Limit ₹${(savedPaymentMethod?.autoDebitLimit || 15000).toLocaleString()} (APPROVED ✓)`,
+    text: `Pre-Authorization Verified: Total ₹${orderResult.amount} <= Budget Limit ₹${intent.maxPrice} & Pre-Auth Limit ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (APPROVED ✓)`,
     status: 'completed'
   });
   steps.push({
-    text: `Merchant Order Created: #${orderResult.orderId} (Razorpay Order: #${orderResult.razorpayOrderId || orderResult.orderId})`,
+    text: `Merchant Order Created: #${orderResult.orderId} (${quantity > 1 ? quantity + 'x ' : ''}${productDetails.title})`,
     status: 'completed'
   });
 
@@ -394,7 +419,7 @@ const runSimulatedBuyerAgent = async ({
   const paymentData = await executeTool('initiatePayment', { orderId: orderResult.orderId }, sessionContext);
   toolCalls.push({ tool: 'initiatePayment', args: { orderId: orderResult.orderId }, result: paymentData });
   steps.push({
-    text: `Razorpay Test Mode Order Ready: #${paymentData.razorpayOrderId || orderResult.orderId} (₹${orderResult.amount})`,
+    text: `Razorpay Order Ready: #${paymentData.razorpayOrderId || orderResult.orderId} (₹${orderResult.amount})`,
     status: 'completed'
   });
 
@@ -403,7 +428,7 @@ const runSimulatedBuyerAgent = async ({
   // Step 6: Direct Zero-Click Autonomous Payment on Razorpay API (0 Human Intervention)
   if (autoExecutePayment) {
     steps.push({
-      text: `Executing Zero-Click Autonomous Payment on Razorpay with Pre-Saved ${savedPaymentMethod.brand || 'Card'} (•••• ${savedPaymentMethod.last4 || '1007'})`,
+      text: `Executing Zero-Click Autonomous Payment on Razorpay via ${methodLabel} (${activeMethod.matchReason || 'Pre-Authorized'})`,
       status: 'completed'
     });
 
@@ -413,19 +438,20 @@ const runSimulatedBuyerAgent = async ({
     }, sessionContext);
     toolCalls.push({ tool: 'verifyPayment', args: { orderId: orderResult.orderId }, result: verificationResult });
 
+    const payMethodDisplay = activeMethod.method === 'netbanking' ? `NetBanking (${activeMethod.bankName || activeMethod.bank})` : (activeMethod.method === 'upi' ? 'Instant UPI' : methodLabel);
     steps.push({
-      text: `Razorpay Live Payment Captured: #${verificationResult.paymentId} (Status: Captured on Razorpay Dashboard ✓)`,
+      text: `Razorpay Live Payment Captured: #${verificationResult.paymentId} (Method: ${payMethodDisplay} ✓)`,
       status: 'completed'
     });
     steps.push({
-      text: `Order Confirmed & Access Granted!`,
+      text: `Order Confirmed & Payment Captured on Razorpay Dashboard!`,
       status: 'completed'
     });
   }
 
   const reply = autoExecutePayment ?
-    `🎉 **Purchase Completed Autonomously! (0 Human Intervention)**\n\nI have successfully evaluated, purchased, and verified **${productDetails.title}** for you:\n\n- **Item**: ${productDetails.title}\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Prompt Authorized Budget**: ₹${intent.maxPrice.toLocaleString()} (Verified ✓)\n- **Pre-Saved Card Limit**: ₹${(savedPaymentMethod?.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured in Razorpay Dashboard ✓)\n- **Payment Method**: Pre-Saved ${savedPaymentMethod.brand || 'Visa'} (•••• ${savedPaymentMethod.last4 || '1007'})\n\nYour order is confirmed and active!` :
-    `I have discovered and evaluated the best product for you: **${productDetails.title}** (${productDetails.rating}⭐ rating).\n\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Authorized Limit**: ₹${intent.maxPrice.toLocaleString()} (Passed ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
+    `🎉 **Purchase Completed Autonomously! (0 Human Intervention)**\n\nI have successfully evaluated, ordered, and verified **${quantity > 1 ? quantity + 'x ' : ''}${productDetails.title}** for you:\n\n- **Item**: ${quantity > 1 ? quantity + 'x ' : ''}${productDetails.title}\n- **Quantity**: ${quantity}\n- **Unit Price**: ₹${unitPrice.toLocaleString()}\n- **Authoritative Total Amount**: ₹${orderResult.amount.toLocaleString()}\n- **Payment Method**: ${methodLabel} (${activeMethod.matchedFromPrompt ? 'Specified in Prompt ✓' : 'Default Pre-Saved ✓'})\n- **Prompt Authorized Budget**: ₹${intent.maxPrice.toLocaleString()} (Verified ✓)\n- **Pre-Saved Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured in Razorpay Dashboard ✓)\n\nYour order is confirmed and active!` :
+    `I have discovered and evaluated the best option for you: **${quantity > 1 ? quantity + 'x ' : ''}${productDetails.title}** (${productDetails.rating}⭐ rating).\n\n- **Quantity**: ${quantity}\n- **Authoritative Total Price**: ₹${orderResult.amount.toLocaleString()}\n- **Payment Method**: ${methodLabel}\n- **Authorized Limit**: ₹${intent.maxPrice.toLocaleString()} (Passed ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
 
   return {
     success: true,

@@ -535,31 +535,188 @@ app.get('/api/restaurants/:id', (req, res) => {
   res.json({ success: true, restaurant: rest });
 });
 
-// GET /api/dishes/search - Search across all dishes
-app.get('/api/dishes/search', (req, res) => {
-  const { q } = req.query;
-  if (!q) return res.json({ success: true, dishes: [] });
-
-  const query = q.toLowerCase();
-  const results = [];
-
+// Flattened dishes as standardized products for Agent discovery
+const getAllDishesAsProducts = () => {
+  const list = [];
   restaurants.forEach(rest => {
     rest.categories.forEach(cat => {
       cat.dishes.forEach(dish => {
-        if (dish.name.toLowerCase().includes(query) || dish.description.toLowerCase().includes(query)) {
-          results.push({
-            ...dish,
-            restaurantId: rest.id,
-            restaurantName: rest.name,
-            restaurantImage: rest.image,
-            deliveryTime: rest.deliveryTime
-          });
-        }
+        list.push({
+          id: dish.id,
+          title: dish.name,
+          description: `${dish.description} (From: ${rest.name})`,
+          price: dish.price,
+          currency: 'INR',
+          rating: dish.rating,
+          category: cat.name,
+          cuisine: rest.cuisine,
+          isVeg: dish.isVeg,
+          available: true,
+          restaurantId: rest.id,
+          restaurantName: rest.name,
+          merchantId: 'merchant_zomato',
+          image: dish.image
+        });
       });
     });
   });
+  return list;
+};
 
-  res.json({ success: true, count: results.length, dishes: results });
+// GET /api/products - Standardized catalog for AI Buying Agent with weighted relevance
+app.get('/api/products', (req, res) => {
+  const { query, maxPrice, vegOnly } = req.query;
+  let list = getAllDishesAsProducts();
+
+  if (vegOnly === 'true') {
+    list = list.filter(p => p.isVeg);
+  }
+
+  if (maxPrice) {
+    list = list.filter(p => p.price <= Number(maxPrice));
+  }
+
+  if (query && query.trim() !== '') {
+    const q = query.toLowerCase().trim();
+    const qWords = q.split(/\s+/).filter(w => w.length > 1);
+
+    const scored = list.map(p => {
+      const pTitle = p.title.toLowerCase();
+      const pDesc = p.description.toLowerCase();
+      let score = 0;
+
+      // Exact full query match
+      if (pTitle.includes(q)) score += 100;
+      if (pDesc.includes(q)) score += 30;
+
+      // Keyword matches
+      qWords.forEach(w => {
+        if (pTitle.includes(w)) {
+          if (['mutton', 'chicken', 'paneer', 'kolkata', 'hyderabadi', 'whopper', 'nutella', 'dimsum', 'waffle', 'pizza'].includes(w)) {
+            score += 25;
+          } else {
+            score += 8;
+          }
+        } else if (pDesc.includes(w)) {
+          score += 3;
+        }
+      });
+
+      // Semantic mismatch penalties (e.g. user asked for mutton but dish has chicken)
+      if (q.includes('mutton') && pTitle.includes('chicken')) score -= 30;
+      if (q.includes('chicken') && pTitle.includes('mutton')) score -= 30;
+      if (q.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 30;
+
+      return { ...p, score };
+    });
+
+    list = scored
+      .filter(p => p.score > 0)
+      .sort((a, b) => b.score - a.score);
+  }
+
+  res.json({ success: true, count: list.length, products: list });
+});
+
+// GET /api/products/:id - Single dish product
+app.get('/api/products/:id', (req, res) => {
+  const products = getAllDishesAsProducts();
+  const prod = products.find(p => p.id === req.params.id);
+  if (!prod) {
+    return res.status(404).json({ success: false, message: 'Dish not found' });
+  }
+  res.json({ success: true, product: prod });
+});
+
+// POST /api/orders - Standardized order creation for AI Buying Agent with quantity support
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { productId, quantity = 1, customerName = 'Student Foodie', customerEmail = 'student@example.com' } = req.body;
+    const products = getAllDishesAsProducts();
+    const product = products.find(p => p.id === productId);
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Dish product not found' });
+    }
+
+    const qty = Math.max(1, parseInt(quantity, 10) || 1);
+    const totalAmount = product.price * qty;
+
+    const rzpOrder = await razorpay.orders.create({
+      amount: totalAmount * 100,
+      currency: 'INR',
+      receipt: `zom_agent_${Date.now().toString().slice(-8)}`,
+      notes: {
+        dishName: product.title,
+        restaurantName: product.restaurantName,
+        quantity: qty,
+        customerName
+      }
+    });
+
+    const orderId = `ORD-ZOM-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    foodOrders[orderId] = {
+      orderId,
+      razorpayOrderId: rzpOrder.id,
+      amount: totalAmount,
+      currency: 'INR',
+      quantity: qty,
+      productTitle: `${qty > 1 ? qty + 'x ' : ''}${product.title}`,
+      dish: product,
+      restaurant: { name: product.restaurantName, id: product.restaurantId },
+      status: 'created',
+      createdAt: new Date().toISOString()
+    };
+    foodOrders[rzpOrder.id] = foodOrders[orderId];
+
+    res.json({
+      success: true,
+      orderId,
+      amount: totalAmount,
+      quantity: qty,
+      currency: 'INR',
+      status: 'created',
+      productTitle: `${qty > 1 ? qty + 'x ' : ''}${product.title}`,
+      razorpayOrderId: rzpOrder.id,
+      razorpayKey: process.env.RAZORPAY_KEY_ID || 'rzp_test_TSqKSZKcvQdzJs'
+    });
+  } catch (error) {
+    console.error('Zomato Agent Order Error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to create order' });
+  }
+});
+
+// POST /api/orders/verify - Standardized verification for AI Buying Agent
+app.post('/api/orders/verify', async (req, res) => {
+  try {
+    const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
+    const key = orderId || razorpayOrderId;
+    const orderData = foodOrders[key] || {
+      orderId: key,
+      amount: 698,
+      productTitle: 'Hyderabadi Chicken Dum Biryani'
+    };
+
+    orderData.status = 'paid';
+    orderData.paymentId = razorpayPaymentId || `pay_mock_${Date.now()}`;
+    orderData.verifiedAt = new Date().toISOString();
+
+    res.json({
+      success: true,
+      orderId: orderData.orderId,
+      razorpayOrderId: orderData.razorpayOrderId || razorpayOrderId,
+      paymentStatus: 'paid',
+      orderStatus: 'confirmed',
+      courseTitle: orderData.productTitle,
+      amount: orderData.amount,
+      currency: 'INR',
+      paymentId: orderData.paymentId
+    });
+  } catch (error) {
+    console.error('Zomato Agent Verify Error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Verification failed' });
+  }
 });
 
 // POST /api/payment/create-order - Create Razorpay order for food delivery

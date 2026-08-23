@@ -553,16 +553,20 @@
           <div class="rzp-agent-empty-desc">Tell the AI agent what to buy on this store. It will evaluate products, verify budget pre-authorization, and complete payment on Razorpay with 0 clicks.</div>
           
           <div class="rzp-agent-chips">
-            <button class="rzp-agent-chip" data-prompt="Buy me a Keychron mechanical keyboard of price upto 4000">
-              <span>⌨️ Keychron Keyboard under ₹4,000</span>
+            <button class="rzp-agent-chip" data-prompt="Order 2 chicken biryani under 1000 and pay using net banking of bob">
+              <span>🍗 2 Chicken Biryani via BOB NetBanking</span>
+              <span>→</span>
+            </button>
+            <button class="rzp-agent-chip" data-prompt="Buy me a Keychron mechanical keyboard under 4000 and pay using amazon credit card">
+              <span>⌨️ Keychron Keyboard via Amazon Card</span>
+              <span>→</span>
+            </button>
+            <button class="rzp-agent-chip" data-prompt="Order 2 crispy chicken whopper meals under 600">
+              <span>🍔 2 Whopper Burger Meals under ₹600</span>
               <span>→</span>
             </button>
             <button class="rzp-agent-chip" data-prompt="Buy me ANC wireless headphones under 3000">
               <span>🎧 ANC Headphones under ₹3,000</span>
-              <span>→</span>
-            </button>
-            <button class="rzp-agent-chip" data-prompt="Buy me a GaN fast charger under 1000">
-              <span>⚡ 100W GaN Charger under ₹1,000</span>
               <span>→</span>
             </button>
           </div>

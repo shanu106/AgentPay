@@ -41,12 +41,29 @@ const checkMerchantAvailability = async (productId, merchantApiBase) => {
   }
 };
 
-const createMerchantOrder = async ({ courseId, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com', merchantApiBase }) => {
+const createMerchantOrder = async ({ courseId, productId, quantity = 1, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com', merchantApiBase }) => {
   const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
+  const pId = productId || courseId;
+  const qty = Math.max(1, parseInt(quantity, 10) || 1);
+
+  // Try standard /api/orders endpoint first
+  try {
+    const res = await fetch(`${apiBase}/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productId: pId, courseId: pId, quantity: qty, customerName, customerEmail })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) return data;
+    }
+  } catch (_) {}
+
+  // Fallback to /api/payment/create-order
   const res = await fetch(`${apiBase}/payment/create-order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ courseId, customerName, customerEmail })
+    body: JSON.stringify({ courseId: pId, productId: pId, quantity: qty, customerName, customerEmail })
   });
 
   const data = await res.json();
@@ -57,12 +74,28 @@ const createMerchantOrder = async ({ courseId, customerName = 'Buyer Agent Custo
   return data;
 };
 
-const verifyMerchantPayment = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, merchantApiBase }) => {
+const verifyMerchantPayment = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, productId, orderId, merchantApiBase }) => {
   const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
+  const pId = productId || courseId;
+
+  // Try /api/orders/verify first
+  try {
+    const res = await fetch(`${apiBase}/orders/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id, razorpaySignature: razorpay_signature, productId: pId })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) return data;
+    }
+  } catch (_) {}
+
+  // Fallback to /api/payment/verify
   const res = await fetch(`${apiBase}/payment/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId })
+    body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId: pId })
   });
 
   const data = await res.json();
