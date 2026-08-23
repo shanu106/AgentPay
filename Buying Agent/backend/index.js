@@ -17,10 +17,50 @@ app.use(express.json());
 
 // ==================== SPECIFICATION: BUYER AGENT ROUTES ====================
 
+// Default pre-saved payment configuration
+let userSavedPayment = {
+  enabled: true,
+  type: 'card',
+  brand: 'Visa (Domestic)',
+  cardNumber: '4100 2800 0000 1007',
+  last4: '1007',
+  expiry: '12/28',
+  holder: 'Student Buyer',
+  autoDebitLimit: 15000,
+  provider: 'Razorpay Domestic Test Tokenized Card'
+};
+
+// GET /api/agent/saved-payment-method - Get user pre-saved payment method
+app.get('/api/agent/saved-payment-method', (req, res) => {
+  res.json({ success: true, paymentMethod: userSavedPayment });
+});
+
+// POST /api/agent/saved-payment-method - Update user pre-saved payment method
+app.post('/api/agent/saved-payment-method', (req, res) => {
+  const { enabled, brand, last4, expiry, holder, autoDebitLimit } = req.body;
+  userSavedPayment = {
+    ...userSavedPayment,
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(brand ? { brand } : {}),
+    ...(last4 ? { last4 } : {}),
+    ...(expiry ? { expiry } : {}),
+    ...(holder ? { holder } : {}),
+    ...(autoDebitLimit ? { autoDebitLimit: Number(autoDebitLimit) } : {})
+  };
+  res.json({ success: true, paymentMethod: userSavedPayment, message: 'Saved payment details updated successfully.' });
+});
+
 // POST /api/agent/purchase - Main Natural-Language Purchase Endpoint (Spec Section 5)
 app.post('/api/agent/purchase', async (req, res) => {
   try {
-    const { message, customApiKey, customerName, customerEmail } = req.body;
+    const { 
+      message, 
+      customApiKey, 
+      customerName, 
+      customerEmail,
+      autoExecutePayment = userSavedPayment.enabled,
+      savedPaymentMethod = userSavedPayment
+    } = req.body;
 
     if (!message || message.trim() === '') {
       return res.status(400).json({
@@ -32,8 +72,10 @@ app.post('/api/agent/purchase', async (req, res) => {
     const response = await processPurchaseRequest({
       message,
       customApiKey,
-      customerName,
-      customerEmail
+      customerName: customerName || userSavedPayment.holder,
+      customerEmail: customerEmail || 'student@example.com',
+      autoExecutePayment,
+      savedPaymentMethod
     });
 
     res.json(response);

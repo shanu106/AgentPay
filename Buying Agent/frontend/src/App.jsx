@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { submitPurchaseRequest, fetchConfig } from './api/agentApi';
+import { submitPurchaseRequest, fetchConfig, fetchSavedPaymentMethod } from './api/agentApi';
 import AgentActivityPanel from './components/AgentActivityPanel';
 import RazorpayModal from './components/RazorpayModal';
 import OrderConfirmationView from './components/OrderConfirmationView';
 import AuditLogsModal from './components/AuditLogsModal';
 import ApiKeyModal from './components/ApiKeyModal';
+import SavedPaymentModal from './components/SavedPaymentModal';
 import './App.css';
 
 const exampleQueries = [
@@ -31,10 +32,22 @@ const exampleQueries = [
 ];
 
 function App() {
-  const [purchaseQuery, setPurchaseQuery] = useState('Buy me a DSA course up to ₹10,000 with good ratings');
+  const [purchaseQuery, setPurchaseQuery] = useState('Buy me a JavaScript mastery course of price upto 500');
   const [customerName, setCustomerName] = useState('Student Buyer');
   const [customerEmail, setCustomerEmail] = useState('student@example.com');
   const [loading, setLoading] = useState(false);
+
+  // Saved Payment Details state
+  const [savedPayment, setSavedPayment] = useState({
+    enabled: true,
+    type: 'card',
+    brand: 'Visa (Domestic)',
+    cardNumber: '4100 2800 0000 1007',
+    last4: '1007',
+    expiry: '12/28',
+    holder: 'Student Buyer',
+    autoDebitLimit: 15000
+  });
 
   // Agent State
   const [agentResult, setAgentResult] = useState(null);
@@ -48,10 +61,12 @@ function App() {
   const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isApiKeyOpen, setIsApiKeyOpen] = useState(false);
+  const [isSavedPaymentOpen, setIsSavedPaymentOpen] = useState(false);
   const [config, setConfig] = useState(null);
 
   useEffect(() => {
     loadConfig();
+    loadSavedPayment();
   }, []);
 
   const loadConfig = async () => {
@@ -60,6 +75,17 @@ function App() {
       setConfig(data);
     } catch (err) {
       console.warn('Failed to load config:', err);
+    }
+  };
+
+  const loadSavedPayment = async () => {
+    try {
+      const data = await fetchSavedPaymentMethod();
+      if (data.paymentMethod) {
+        setSavedPayment(data.paymentMethod);
+      }
+    } catch (err) {
+      console.warn('Failed to load saved payment method:', err);
     }
   };
 
@@ -79,8 +105,10 @@ function App() {
     try {
       const res = await submitPurchaseRequest({
         message: text,
-        customerName,
-        customerEmail
+        customerName: savedPayment.holder || customerName,
+        customerEmail,
+        autoExecutePayment: savedPayment.enabled !== false,
+        savedPaymentMethod: savedPayment
       });
 
       setAgentResult(res);
@@ -89,7 +117,16 @@ function App() {
       setActiveOrder(res.order);
       setPaymentData(res.paymentData);
 
-      if (res.requiresCheckout && res.paymentData) {
+      // Zero Human Intervention: If autoPaid is true, order is confirmed & captured on Razorpay
+      if (res.autoPaid && res.order) {
+        setConfirmedOrder({
+          ...res.order,
+          verifiedPayment: res.verification,
+          status: 'confirmed'
+        });
+        setIsRazorpayOpen(false);
+      } else if (!res.autoPaid && res.requiresCheckout && res.paymentData) {
+        // Only open manual checkout if auto-debit was explicitly turned off
         setIsRazorpayOpen(true);
       }
     } catch (err) {
@@ -103,16 +140,18 @@ function App() {
   };
 
   const handlePaymentSuccess = (verificationResult) => {
+    const verifiedData = verificationResult.verification || verificationResult;
     setConfirmedOrder({
-      ...activeOrder,
-      verifiedPayment: verificationResult.verification,
+      ...(activeOrder || agentResult?.order || {}),
+      verifiedPayment: verifiedData,
       status: 'confirmed'
     });
 
     setSteps(prev => [
       ...prev,
-      { text: `Payment Verified with HMAC SHA256 Signature (Payment ID: ${verificationResult.verification?.paymentId || 'pay_test'})`, status: 'completed' },
-      { text: `Merchant Order Confirmed & Enrolled!`, status: 'completed' }
+      { text: `Payment Captured in Razorpay (Payment ID: ${verifiedData.paymentId || verifiedData.razorpay_payment_id || 'pay_verified'})`, status: 'completed' },
+      { text: `HMAC SHA256 Signature Verified with Merchant Backend!`, status: 'completed' },
+      { text: `Course Enrollment Activated! Payment visible in Razorpay Dashboard.`, status: 'completed' }
     ]);
   };
 
@@ -123,7 +162,7 @@ function App() {
     setActiveOrder(null);
     setPaymentData(null);
     setConfirmedOrder(null);
-    setPurchaseQuery('Buy me a DSA course up to ₹10,000 with good ratings');
+    setPurchaseQuery('Buy me a JavaScript mastery course of price upto 500');
   };
 
   return (
@@ -134,11 +173,25 @@ function App() {
           <div className="brand-logo-icon">🤖</div>
           <div className="brand-info">
             <h1>AI Shopping Buyer Agent</h1>
-            <span>Autonomous Purchase • Gemini API • Razorpay Test Mode</span>
+            <span>Autonomous Purchase • Pre-Authorized Auto-Debit • Razorpay Test Mode</span>
           </div>
         </div>
 
         <div className="header-actions">
+          {/* Pre-Saved Payment Badge / Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsSavedPaymentOpen(true)}
+            style={{ 
+              background: savedPayment.enabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.05)',
+              borderColor: savedPayment.enabled ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)',
+              color: savedPayment.enabled ? 'var(--accent-emerald)' : 'var(--text-secondary)'
+            }}
+          >
+            <span>💳</span>
+            <span>{savedPayment.enabled ? `Auto-Pay: ${savedPayment.brand} •••• ${savedPayment.last4}` : 'Auto-Pay: Off'}</span>
+          </button>
+
           <button className="key-status-btn" onClick={() => setIsAuditOpen(true)}>
             <span>📜</span>
             <span>Audit Logs</span>
@@ -146,7 +199,7 @@ function App() {
 
           <button className="key-status-btn" onClick={() => setIsApiKeyOpen(true)}>
             <span className={`status-dot ${config?.hasGeminiKey ? 'active' : 'simulated'}`}></span>
-            <span>{config?.hasGeminiKey ? 'Gemini 2.0 Active' : 'Gemini Key (Demo Mode)'}</span>
+            <span>{config?.hasGeminiKey ? 'Gemini 2.0 Active' : 'Gemini Key'}</span>
           </button>
 
           <a 
@@ -168,9 +221,28 @@ function App() {
         <div className="buyer-left-pane">
           {/* Purchase Request Box */}
           <div className="purchase-card">
-            <h2 className="purchase-card-title">What do you want to buy?</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h2 className="purchase-card-title" style={{ margin: 0 }}>What do you want to buy?</h2>
+              {savedPayment.enabled && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  color: 'var(--accent-emerald)',
+                  fontWeight: '700'
+                }}>
+                  <span>⚡</span> Auto-Buy Enabled
+                </div>
+              )}
+            </div>
+
             <p className="purchase-card-sub">
-              Enter your purchase request and spending limit. The AI Agent will discover, verify, authorize, and prepare payment.
+              Enter your purchase request and price limit. The AI Agent will automatically discover, verify, and complete checkout with pre-authorized payment details.
             </p>
 
             <form onSubmit={(e) => { e.preventDefault(); handlePurchaseSubmit(); }} className="purchase-form">
@@ -178,7 +250,7 @@ function App() {
                 <input
                   type="text"
                   className="purchase-input-field"
-                  placeholder="e.g. Buy me a DSA course up to ₹10,000 with good ratings"
+                  placeholder="e.g. Buy me a JavaScript mastery course of price upto 500"
                   value={purchaseQuery}
                   onChange={(e) => setPurchaseQuery(e.target.value)}
                   disabled={loading}
@@ -219,7 +291,7 @@ function App() {
             <div className="selected-product-card">
               <div className="sel-prod-header">
                 <span className="sel-prod-tag">
-                  {activeOrder ? '✓ Selected by Agent' : 'Candidate Inspected'}
+                  {confirmedOrder ? '✓ Purchased & Enrolled' : activeOrder ? '✓ Selected by Agent' : 'Candidate Inspected'}
                 </span>
                 <span className="sel-prod-rating">⭐ {selectedProduct.rating} ({selectedProduct.ratingCount || '48k+'})</span>
               </div>
@@ -245,18 +317,18 @@ function App() {
                 {/* Authorization Status Pill */}
                 {activeOrder ? (
                   <div className="auth-status-pill authorized">
-                    <span>🛡️ Authorization Engine:</span>
-                    <strong>APPROVED (₹{selectedProduct.price} ≤ ₹{agentResult?.intent?.maxPrice || 10000})</strong>
+                    <span>🛡️ Pre-Authorization Engine:</span>
+                    <strong>APPROVED & AUTO-DEBITED (₹{selectedProduct.price} ≤ ₹{agentResult?.intent?.maxPrice || 10000})</strong>
                   </div>
                 ) : agentResult?.success === false ? (
                   <div className="auth-status-pill denied">
-                    <span>🛡️ Authorization Engine:</span>
+                    <span>🛡️ Pre-Authorization Engine:</span>
                     <strong>DENIED: Price exceeds authorized limit</strong>
                   </div>
                 ) : null}
 
-                {/* Direct Action Trigger */}
-                {activeOrder && !confirmedOrder && (
+                {/* Direct Action Trigger only if not auto-paid */}
+                {activeOrder && !confirmedOrder && !agentResult?.autoPaid && (
                   <button 
                     className="btn-checkout"
                     style={{ marginTop: '14px' }}
@@ -289,12 +361,20 @@ function App() {
         </div>
       </main>
 
-      {/* Razorpay Test Modal */}
+      {/* Razorpay Test Modal (Fallback if manual checkout requested) */}
       <RazorpayModal
         isOpen={isRazorpayOpen}
         onClose={() => setIsRazorpayOpen(false)}
         paymentData={paymentData}
         onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      {/* Pre-Saved Payment Details Modal */}
+      <SavedPaymentModal
+        isOpen={isSavedPaymentOpen}
+        onClose={() => setIsSavedPaymentOpen(false)}
+        savedPayment={savedPayment}
+        onPaymentUpdated={(p) => setSavedPayment(p)}
       />
 
       {/* Audit Logs Modal */}

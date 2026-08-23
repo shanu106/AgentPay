@@ -16,12 +16,41 @@ const handleResponse = async (res) => {
   return data;
 };
 
+// Ensure Razorpay SDK is loaded
+export const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (window.Razorpay) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 // Purchase Intent & Buyer Agent Execution (Spec Section 5)
-export const submitPurchaseRequest = async ({ message, customApiKey, customerName, customerEmail }) => {
+export const submitPurchaseRequest = async ({ 
+  message, 
+  customApiKey, 
+  customerName, 
+  customerEmail,
+  autoExecutePayment,
+  savedPaymentMethod 
+}) => {
   const res = await fetch(`${API_BASE}/agent/purchase`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, customApiKey, customerName, customerEmail })
+    body: JSON.stringify({ 
+      message, 
+      customApiKey, 
+      customerName, 
+      customerEmail,
+      autoExecutePayment,
+      savedPaymentMethod
+    })
   });
   return handleResponse(res);
 };
@@ -32,6 +61,21 @@ export const verifyPayment = async ({ orderId, razorpay_order_id, razorpay_payme
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderId, razorpay_order_id, razorpay_payment_id, razorpay_signature })
+  });
+  return handleResponse(res);
+};
+
+// Saved Payment Methods API
+export const fetchSavedPaymentMethod = async () => {
+  const res = await fetch(`${API_BASE}/agent/saved-payment-method`);
+  return handleResponse(res);
+};
+
+export const updateSavedPaymentMethod = async (paymentData) => {
+  const res = await fetch(`${API_BASE}/agent/saved-payment-method`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData)
   });
   return handleResponse(res);
 };
