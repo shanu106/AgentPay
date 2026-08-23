@@ -23,7 +23,7 @@
   // Extract config from script tag attributes
   const currentScript = document.currentScript || document.querySelector('script[src*="razorpay-agent.js"]');
   const config = {
-    key: currentScript?.getAttribute('data-key') || 'rzp_test_TSqKSZKcvQdzJs',
+    key: currentScript?.getAttribute('data-key') || '',
     merchantApi: currentScript?.getAttribute('data-merchant-api') || window.location.origin + '/api',
     agentApi: currentScript?.getAttribute('data-agent-api') || 'http://localhost:8001/api/agent',
     autoDebit: currentScript?.getAttribute('data-auto-debit') !== 'false',

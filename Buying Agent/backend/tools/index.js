@@ -349,8 +349,8 @@ const executeTool = async (name, args, sessionContext = {}) => {
       }
 
       const razorpayOrderId = order.razorpayOrderId || order.razorpayOrder?.id || order.merchantOrderId || `order_${order.orderId}`;
-      const secret = process.env.RAZORPAY_KEY_SECRET || 'p5mgqE0iWQK4jWdgvB2qGJkA';
-      const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_TSqKSZKcvQdzJs';
+      const secret = process.env.RAZORPAY_KEY_SECRET;
+      const keyId = process.env.RAZORPAY_KEY_ID;
       let paymentId = razorpayPaymentId;
 
       const activeMethod = paymentMethod || savedPaymentMethod || { type: 'card', method: 'card' };
