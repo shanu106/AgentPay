@@ -739,7 +739,8 @@
       if (data.success && data.autoPaid) {
         // Render Confirmed Order Card
         appendConfirmedOrderCard({
-          productTitle: data.selectedProduct?.title || 'Product',
+          productTitle: data.order?.productTitle || data.verification?.courseTitle || data.selectedProduct?.title || 'Product',
+          items: data.order?.items || [],
           amount: data.order?.amount || 499,
           orderId: data.order?.orderId,
           razorpayOrderId: data.order?.razorpayOrderId || data.paymentData?.razorpayOrderId,
@@ -808,16 +809,27 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  function appendConfirmedOrderCard({ productTitle, amount, orderId, razorpayOrderId, razorpayPaymentId }) {
+  function appendConfirmedOrderCard({ productTitle, items = [], amount, orderId, razorpayOrderId, razorpayPaymentId }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'rzp-agent-order-card';
+    
+    let itemsHtml = '';
+    if (items && items.length > 0) {
+      itemsHtml = `
+        <div style="margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 6px; font-size: 11px;">
+          ${items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span><strong>${i.quantity || 1}x</strong> ${escapeHtml(i.title || i.productTitle)}</span><span style="color:#0f172a; font-weight:600;">₹${(i.lineTotal || (i.price * (i.quantity || 1)) || 0).toLocaleString()}</span></div>`).join('')}
+        </div>
+      `;
+    }
+
     cardEl.innerHTML = `
       <div class="rzp-agent-order-header">
         <span>🎉 Order Autonomously Placed & Captured!</span>
         <span>₹${amount.toLocaleString()}</span>
       </div>
       <div class="rzp-agent-order-details">
-        <div><strong>Item:</strong> ${escapeHtml(productTitle)}</div>
+        <div><strong>Item(s):</strong> ${escapeHtml(productTitle)}</div>
+        ${itemsHtml}
         <div><strong>Store Order:</strong> <code>#${orderId || 'ORD-NEW'}</code></div>
         <div><strong>Razorpay Order:</strong> <code>${razorpayOrderId || 'order_xxx'}</code></div>
         <div><strong>Razorpay Payment ID:</strong> <code style="color:#0284c7; font-weight:bold;">${razorpayPaymentId}</code> (Captured ✓)</div>

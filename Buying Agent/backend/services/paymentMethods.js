@@ -21,11 +21,11 @@ const PRE_SAVED_PAYMENT_METHODS = {
     type: 'card',
     method: 'card',
     brand: 'Amazon Pay ICICI Credit Card',
-    last4: '4321',
-    cardNumber: '4100 2800 0000 4321',
+    last4: '2005',
+    cardNumber: '4100 2800 0000 2005',
     expiry: '09/29',
     holder: 'Student Buyer',
-    label: 'Amazon Pay ICICI Credit Card (•••• 4321)',
+    label: 'Amazon Pay ICICI Credit Card (•••• 2005)',
     autoDebitLimit: 25000
   },
   hdfc_card: {
@@ -33,11 +33,11 @@ const PRE_SAVED_PAYMENT_METHODS = {
     type: 'card',
     method: 'card',
     brand: 'HDFC Millennia Credit Card',
-    last4: '8899',
-    cardNumber: '4100 2800 0000 8899',
+    last4: '3003',
+    cardNumber: '4100 2800 0000 3003',
     expiry: '05/30',
     holder: 'Student Buyer',
-    label: 'HDFC Millennia Card (•••• 8899)',
+    label: 'HDFC Millennia Card (•••• 3003)',
     autoDebitLimit: 20000
   },
   bob_netbanking: {

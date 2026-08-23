@@ -41,7 +41,7 @@ const checkMerchantAvailability = async (productId, merchantApiBase) => {
   }
 };
 
-const createMerchantOrder = async ({ courseId, productId, quantity = 1, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com', merchantApiBase }) => {
+const createMerchantOrder = async ({ courseId, productId, quantity = 1, items, totalAmount, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com', merchantApiBase }) => {
   const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
   const pId = productId || courseId;
   const qty = Math.max(1, parseInt(quantity, 10) || 1);
@@ -51,7 +51,7 @@ const createMerchantOrder = async ({ courseId, productId, quantity = 1, customer
     const res = await fetch(`${apiBase}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ productId: pId, courseId: pId, quantity: qty, customerName, customerEmail })
+      body: JSON.stringify({ items, productId: pId, courseId: pId, quantity: qty, totalAmount, customerName, customerEmail })
     });
     if (res.ok) {
       const data = await res.json();
@@ -63,7 +63,7 @@ const createMerchantOrder = async ({ courseId, productId, quantity = 1, customer
   const res = await fetch(`${apiBase}/payment/create-order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ courseId: pId, productId: pId, quantity: qty, customerName, customerEmail })
+    body: JSON.stringify({ items, courseId: pId, productId: pId, quantity: qty, totalAmount, customerName, customerEmail })
   });
 
   const data = await res.json();

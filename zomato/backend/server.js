@@ -628,28 +628,62 @@ app.get('/api/products/:id', (req, res) => {
   res.json({ success: true, product: prod });
 });
 
-// POST /api/orders - Standardized order creation for AI Buying Agent with quantity support
+// POST /api/orders - Standardized order creation for AI Buying Agent with multi-item batch support
 app.post('/api/orders', async (req, res) => {
   try {
-    const { productId, quantity = 1, customerName = 'Student Foodie', customerEmail = 'student@example.com' } = req.body;
+    const { productId, quantity = 1, items, customerName = 'Student Foodie', customerEmail = 'student@example.com' } = req.body;
     const products = getAllDishesAsProducts();
-    const product = products.find(p => p.id === productId);
 
-    if (!product) {
-      return res.status(404).json({ success: false, message: 'Dish product not found' });
+    let totalAmount = 0;
+    let orderTitle = '';
+    const orderItems = [];
+
+    if (items && Array.isArray(items) && items.length > 0) {
+      for (const itm of items) {
+        const prod = products.find(p => p.id === (itm.productId || itm.id));
+        if (prod) {
+          const q = Math.max(1, parseInt(itm.quantity, 10) || 1);
+          totalAmount += prod.price * q;
+          orderItems.push({
+            id: prod.id,
+            title: prod.title,
+            price: prod.price,
+            quantity: q,
+            lineTotal: prod.price * q,
+            restaurantName: prod.restaurantName
+          });
+        }
+      }
+      orderTitle = orderItems.map(i => `${i.quantity}x ${i.title}`).join(', ');
+    } else if (productId) {
+      const product = products.find(p => p.id === productId);
+      if (!product) {
+        return res.status(404).json({ success: false, message: 'Dish product not found' });
+      }
+      const qty = Math.max(1, parseInt(quantity, 10) || 1);
+      totalAmount = product.price * qty;
+      orderItems.push({
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        quantity: qty,
+        lineTotal: totalAmount,
+        restaurantName: product.restaurantName
+      });
+      orderTitle = `${qty > 1 ? qty + 'x ' : ''}${product.title}`;
     }
 
-    const qty = Math.max(1, parseInt(quantity, 10) || 1);
-    const totalAmount = product.price * qty;
+    if (orderItems.length === 0 || totalAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'No valid dishes in order.' });
+    }
 
     const rzpOrder = await razorpay.orders.create({
       amount: totalAmount * 100,
       currency: 'INR',
       receipt: `zom_agent_${Date.now().toString().slice(-8)}`,
       notes: {
-        dishName: product.title,
-        restaurantName: product.restaurantName,
-        quantity: qty,
+        orderTitle: orderTitle.slice(0, 100),
+        itemCount: orderItems.length,
         customerName
       }
     });
@@ -661,10 +695,9 @@ app.post('/api/orders', async (req, res) => {
       razorpayOrderId: rzpOrder.id,
       amount: totalAmount,
       currency: 'INR',
-      quantity: qty,
-      productTitle: `${qty > 1 ? qty + 'x ' : ''}${product.title}`,
-      dish: product,
-      restaurant: { name: product.restaurantName, id: product.restaurantId },
+      quantity: orderItems.reduce((acc, i) => acc + i.quantity, 0),
+      productTitle: orderTitle,
+      items: orderItems,
       status: 'created',
       createdAt: new Date().toISOString()
     };
@@ -674,10 +707,11 @@ app.post('/api/orders', async (req, res) => {
       success: true,
       orderId,
       amount: totalAmount,
-      quantity: qty,
+      quantity: orderItems.reduce((acc, i) => acc + i.quantity, 0),
       currency: 'INR',
       status: 'created',
-      productTitle: `${qty > 1 ? qty + 'x ' : ''}${product.title}`,
+      productTitle: orderTitle,
+      items: orderItems,
       razorpayOrderId: rzpOrder.id,
       razorpayKey: process.env.RAZORPAY_KEY_ID || 'rzp_test_TSqKSZKcvQdzJs'
     });

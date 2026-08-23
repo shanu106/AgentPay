@@ -166,10 +166,15 @@ const executeTool = async (name, args, sessionContext = {}) => {
         products: products.map(p => ({
           id: p.id,
           title: p.title,
+          description: p.description,
+          restaurantName: p.restaurantName,
+          restaurantId: p.restaurantId,
+          brand: p.brand,
+          category: p.category,
           price: p.price,
           currency: p.currency,
           rating: p.rating,
-          merchantId: p.merchant?.id || 'merchant_demo'
+          merchantId: p.merchant?.id || p.merchantId || 'merchant_demo'
         }))
       };
       logAudit('TOOL_INVOCATION_SUCCESS', { tool: name, count: products.length });
@@ -199,28 +204,56 @@ const executeTool = async (name, args, sessionContext = {}) => {
     }
 
     case 'createOrder': {
-      const { productId, quantity = 1 } = args;
-      const qty = Math.max(1, parseInt(quantity, 10) || 1);
+      const { productId, quantity = 1, items } = args;
 
-      // 1. Fetch authoritative product data from merchant
-      const product = await merchantService.getMerchantProduct(productId, merchantApiBase);
-      const totalAmount = product.price * qty;
-      
+      let totalAmount = 0;
+      let orderTitle = '';
+      let evaluatedItems = [];
+      let primaryProduct = null;
+
+      if (items && Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          const prod = await merchantService.getMerchantProduct(item.productId || item.id, merchantApiBase);
+          const q = Math.max(1, parseInt(item.quantity, 10) || 1);
+          const lineTotal = prod.price * q;
+          totalAmount += lineTotal;
+          evaluatedItems.push({
+            productId: prod.id,
+            title: prod.title,
+            unitPrice: prod.price,
+            quantity: q,
+            lineTotal
+          });
+          if (!primaryProduct) primaryProduct = prod;
+        }
+        orderTitle = evaluatedItems.map(i => `${i.quantity}x ${i.title}`).join(', ');
+      } else {
+        const qty = Math.max(1, parseInt(quantity, 10) || 1);
+        primaryProduct = await merchantService.getMerchantProduct(productId, merchantApiBase);
+        totalAmount = primaryProduct.price * qty;
+        orderTitle = `${qty > 1 ? qty + 'x ' : ''}${primaryProduct.title}`;
+        evaluatedItems.push({
+          productId: primaryProduct.id,
+          title: primaryProduct.title,
+          unitPrice: primaryProduct.price,
+          quantity: qty,
+          lineTotal: totalAmount
+        });
+      }
+
       // 2. Authorization Engine validation (Strict spending limit check against total order amount)
       const authCheck = AuthorizationService.validatePurchaseAuthorization({
         maxAmount: userAuth.maxAmount,
         currency: userAuth.currency || 'INR',
         allowedCategories: userAuth.allowedCategories,
         product: {
-          ...product,
+          ...primaryProduct,
           price: totalAmount
         }
       });
 
       logAudit('AUTHORIZATION_CHECK', {
-        productId,
-        quantity: qty,
-        unitPrice: product.price,
+        items: evaluatedItems,
         totalAmount,
         maxAuthorizedAmount: userAuth.maxAmount,
         authResult: authCheck
@@ -231,17 +264,21 @@ const executeTool = async (name, args, sessionContext = {}) => {
           success: false,
           error: authCheck.reason,
           code: authCheck.code,
-          status: 'denied'
+          status: 'denied',
+          totalAmount,
+          items: evaluatedItems
         };
         logAudit('ORDER_CREATION_DENIED', denyResult);
         return denyResult;
       }
 
-      // 3. Create order on Merchant Backend with quantity
+      // 3. Create order on Merchant Backend with multi-item items array
       const merchantOrderResponse = await merchantService.createMerchantOrder({
-        courseId: product.id,
-        productId: product.id,
-        quantity: qty,
+        courseId: primaryProduct.id,
+        productId: primaryProduct.id,
+        quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0),
+        items: evaluatedItems,
+        totalAmount,
         customerName,
         customerEmail,
         merchantApiBase
@@ -253,10 +290,11 @@ const executeTool = async (name, args, sessionContext = {}) => {
         orderId: internalOrderId,
         merchantOrderId: merchantOrderResponse.order?.id || merchantOrderResponse.orderId,
         razorpayOrderId: rzpOrderId,
-        product,
-        quantity: qty,
+        product: primaryProduct,
+        items: evaluatedItems,
+        quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0),
         amount: totalAmount,
-        currency: product.currency || 'INR',
+        currency: primaryProduct.currency || 'INR',
         status: 'created',
         paymentStatus: 'pending',
         razorpayOrder: merchantOrderResponse.order || { id: rzpOrderId },
@@ -267,15 +305,16 @@ const executeTool = async (name, args, sessionContext = {}) => {
       };
 
       buyerOrders[internalOrderId] = orderRecord;
-      logAudit('ORDER_CREATION_SUCCESS', { orderId: internalOrderId, amount: orderRecord.amount, quantity: qty });
+      logAudit('ORDER_CREATION_SUCCESS', { orderId: internalOrderId, amount: orderRecord.amount, items: evaluatedItems });
 
       return {
         orderId: internalOrderId,
         amount: orderRecord.amount,
-        quantity: qty,
+        quantity: orderRecord.quantity,
+        items: evaluatedItems,
         currency: orderRecord.currency,
         status: 'created',
-        productTitle: `${qty > 1 ? qty + 'x ' : ''}${product.title}`,
+        productTitle: orderTitle,
         razorpayOrderId: rzpOrderId,
         razorpayKey: merchantOrderResponse.order?.key || merchantOrderResponse.razorpayKey
       };
@@ -337,11 +376,11 @@ const executeTool = async (name, args, sessionContext = {}) => {
             // Card payment
             form.append('method', 'card');
             form.append('card[number]', (activeMethod.cardNumber || '4100280000001007').replace(/\s+/g, ''));
-            form.append('card[exp_month]', (activeMethod.expiry || '12/28').split('/')[0]);
-            form.append('card[exp_year]', (activeMethod.expiry || '12/28').split('/')[1]);
+            const [expMonth, expYear] = (activeMethod.expiry || '12/28').split('/');
+            form.append('card[expiry_month]', expMonth);
+            form.append('card[expiry_year]', expYear.length === 2 ? `20${expYear}` : expYear);
             form.append('card[cvv]', '123');
             form.append('card[name]', activeMethod.holder || order.customerName || 'Student Buyer');
-            form.append('capture', '1');
           }
 
           const rzpResponse = await fetch('https://api.razorpay.com/v1/payments/create/ajax', {
@@ -350,16 +389,94 @@ const executeTool = async (name, args, sessionContext = {}) => {
             body: form.toString()
           });
           const rzpResult = await rzpResponse.json();
+          if (rzpResult.error) {
+            console.error('RAZORPAY PAYMENT CREATION ERROR:', JSON.stringify(rzpResult.error, null, 2));
+          }
           if (rzpResult.payment_id || rzpResult.id) {
             paymentId = rzpResult.payment_id || rzpResult.id;
-            if (activeMethod.method === 'netbanking' && rzpResult.request?.url) {
+
+            // Complete automated 3DS bank authorization / Mocksharp approval
+            if (rzpResult.request?.url) {
               try {
-                await fetch('https://api.razorpay.com/v1/gateway/mocksharp/payment?key_id=' + keyId, {
+                let actionUrl = rzpResult.request.url;
+                let postParams = new URLSearchParams(rzpResult.request.content || {});
+
+                // If URL is an authenticate redirect, fetch HTML to extract bank form
+                if (actionUrl.includes('/authenticate')) {
+                  const authRes = await fetch(actionUrl, { method: 'POST' });
+                  const authHtml = await authRes.text();
+                  const formMatch = authHtml.match(/action="([^"]+)"/);
+                  if (formMatch) {
+                    actionUrl = formMatch[1].replace(/&amp;/g, '&');
+                    const inputMatches = [...authHtml.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
+                    postParams = new URLSearchParams();
+                    for (const m of inputMatches) postParams.append(m[1], m[2]);
+                  }
+                }
+
+                // Post to mock bank gateway
+                const mockRes = await fetch(actionUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: 'action=authorize&payment_id=' + paymentId + '&callback_url=' + encodeURIComponent(rzpResult.request.content?.callback_url || '')
+                  body: postParams.toString()
                 });
-              } catch (_) {}
+                const mockHtml = await mockRes.text();
+
+                // Submit Success ("S") confirmation to bank submit endpoint
+                const submitMatch = mockHtml.match(/action="([^"]+)"/);
+                const cbMatch = mockHtml.match(/name="callback_url"[^>]+value="([^"]+)"/);
+                if (submitMatch && cbMatch) {
+                  const submitUrl = submitMatch[1].replace(/&amp;/g, '&');
+                  const cbUrl = cbMatch[1].replace(/&amp;/g, '&');
+                  const submitForm = new URLSearchParams();
+                  submitForm.append('callback_url', cbUrl);
+                  submitForm.append('language_code', 'en');
+                  submitForm.append('success', 'S');
+
+                  const submitRes = await fetch(submitUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: submitForm.toString()
+                  });
+                  const submitHtml = await submitRes.text();
+                  const finalMatch = submitHtml.match(/action="([^"]+)"/);
+                  if (finalMatch) {
+                    const finalUrl = finalMatch[1].replace(/&amp;/g, '&');
+                    const finalInputs = [...submitHtml.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
+                    const finalForm = new URLSearchParams();
+                    for (const m of finalInputs) finalForm.append(m[1], m[2]);
+                    await fetch(finalUrl, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                      body: finalForm.toString()
+                    });
+                  }
+                }
+              } catch (mockErr) {
+                console.warn('Automated 3DS bank flow note:', mockErr.message);
+              }
+            }
+
+            // Capture payment if authorized
+            try {
+              const checkRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+                headers: {
+                  'Authorization': 'Basic ' + Buffer.from(`${keyId}:${secret}`).toString('base64')
+                }
+              });
+              const pData = await checkRes.json();
+              if (pData.status === 'authorized') {
+                await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/capture`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Basic ' + Buffer.from(`${keyId}:${secret}`).toString('base64')
+                  },
+                  body: JSON.stringify({ amount: (order.amount || 499) * 100, currency: order.currency || 'INR' })
+                });
+              }
+            } catch (capErr) {
+              console.warn('Payment capture check note:', capErr.message);
             }
           }
         } catch (rzpErr) {
