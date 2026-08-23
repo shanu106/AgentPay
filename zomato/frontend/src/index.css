@@ -1,0 +1,103 @@
+:root {
+  --zomato-red: #e23744;
+  --zomato-red-hover: #cb202d;
+  --zomato-red-light: #fff1f2;
+  --zomato-gray: #1c1c1c;
+  --zomato-text-muted: #696969;
+  --zomato-border: #e8e8e8;
+  --zomato-bg-light: #f8f8f8;
+  --veg-green: #24963f;
+  --nonveg-red: #e23744;
+  --rating-green: #24963f;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--zomato-gray);
+  background-color: #ffffff;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Veg / Non-Veg Icons */
+.veg-icon {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--veg-green);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+.veg-dot {
+  width: 7px;
+  height: 7px;
+  background-color: var(--veg-green);
+  border-radius: 50%;
+}
+
+.nonveg-icon {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--nonveg-red);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+.nonveg-dot {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 7px solid var(--nonveg-red);
+}
+
+/* Restaurant Card Hover */
+.restaurant-card {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 16px;
+  padding: 10px;
+}
+.restaurant-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1), 0 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Category Item Hover */
+.category-circle {
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+.category-circle:hover {
+  transform: scale(1.05);
+}
