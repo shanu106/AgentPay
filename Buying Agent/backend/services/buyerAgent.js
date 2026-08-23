@@ -42,14 +42,14 @@ const extractPurchaseIntent = (message) => {
 
   // 2. Dynamic & Comprehensive Topic Recognition (Ordered by Specificity)
   let query = '';
-  if (text.includes('node') || text.includes('express') || text.includes('backend')) {
+  if (text.includes('ai & machine learning') || text.includes('ai and machine learning') || text.includes('machine learning') || text.includes('deep learning') || text.includes('ai ml') || text.includes('artificial intelligence') || /\bai\b/i.test(text) || text.includes('neural')) {
+    query = 'AI & Machine Learning';
+  } else if (text.includes('node') || text.includes('express') || text.includes('backend')) {
     query = 'Node.js';
   } else if (text.includes('fullstack') || text.includes('full stack') || text.includes('full-stack')) {
     query = 'Full Stack';
   } else if (text.includes('dsa') || text.includes('data structure') || text.includes('algorithm') || text.includes('leetcode')) {
     query = 'DSA';
-  } else if (text.includes('ai') || text.includes('machine learning') || text.includes('deep learning') || text.includes('ml ') || text.includes('neural')) {
-    query = 'AI';
   } else if (text.includes('python') || text.includes('data science') || text.includes('pandas') || text.includes('numpy')) {
     query = 'Python';
   } else if (text.includes('react') || text.includes('next.js') || text.includes('nextjs') || text.includes('frontend')) {
@@ -75,7 +75,7 @@ const extractPurchaseIntent = (message) => {
       .replace(/best/gi, '')
       .trim();
 
-    query = cleaned.length > 0 ? cleaned : 'JavaScript';
+    query = cleaned.length > 0 ? cleaned : 'AI';
   }
 
   return {
