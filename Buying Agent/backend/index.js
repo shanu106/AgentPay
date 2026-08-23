@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const { processPurchaseRequest } = require('./services/buyerAgent');
@@ -14,6 +15,9 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Serve static embeddable SDK files (e.g. /sdk/razorpay-agent.js)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== SPECIFICATION: BUYER AGENT ROUTES ====================
 
@@ -53,13 +57,14 @@ app.post('/api/agent/saved-payment-method', (req, res) => {
 // POST /api/agent/purchase - Main Natural-Language Purchase Endpoint (Spec Section 5)
 app.post('/api/agent/purchase', async (req, res) => {
   try {
-    const { 
-      message, 
-      customApiKey, 
-      customerName, 
+    const {
+      message,
+      customApiKey,
+      customerName,
       customerEmail,
       autoExecutePayment = userSavedPayment.enabled,
-      savedPaymentMethod = userSavedPayment
+      savedPaymentMethod = userSavedPayment,
+      merchantApiBase
     } = req.body;
 
     if (!message || message.trim() === '') {
@@ -75,7 +80,8 @@ app.post('/api/agent/purchase', async (req, res) => {
       customerName: customerName || userSavedPayment.holder,
       customerEmail: customerEmail || 'student@example.com',
       autoExecutePayment,
-      savedPaymentMethod
+      savedPaymentMethod,
+      merchantApiBase
     });
 
     res.json(response);

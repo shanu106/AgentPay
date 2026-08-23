@@ -1,15 +1,16 @@
-const MERCHANT_API_BASE = process.env.MERCHANT_API_BASE || 'http://localhost:8000/api';
+const DEFAULT_MERCHANT_API_BASE = process.env.MERCHANT_API_BASE || 'http://localhost:8000/api';
 
 /**
- * Merchant Service: Interacts with the Merchant Course Website API (Spec Section 17 & 18)
+ * Merchant Service: Interacts with the Merchant Store / Course API (Spec Section 17 & 18)
  */
-const searchMerchantProducts = async ({ query, maxPrice, category }) => {
+const searchMerchantProducts = async ({ query, maxPrice, category, merchantApiBase }) => {
+  const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
   const params = new URLSearchParams();
   if (query) params.append('query', query);
   if (maxPrice) params.append('maxPrice', maxPrice);
   if (category) params.append('category', category);
 
-  const res = await fetch(`${MERCHANT_API_BASE}/products?${params.toString()}`);
+  const res = await fetch(`${apiBase}/products?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`Merchant API error: ${res.statusText}`);
   }
@@ -17,8 +18,9 @@ const searchMerchantProducts = async ({ query, maxPrice, category }) => {
   return data.products || [];
 };
 
-const getMerchantProduct = async (productId) => {
-  const res = await fetch(`${MERCHANT_API_BASE}/products/${productId}`);
+const getMerchantProduct = async (productId, merchantApiBase) => {
+  const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
+  const res = await fetch(`${apiBase}/products/${productId}`);
   if (!res.ok) {
     throw new Error(`Product not found on merchant with ID: ${productId}`);
   }
@@ -26,20 +28,22 @@ const getMerchantProduct = async (productId) => {
   return data.product;
 };
 
-const checkMerchantAvailability = async (productId) => {
+const checkMerchantAvailability = async (productId, merchantApiBase) => {
+  const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
   try {
-    const res = await fetch(`${MERCHANT_API_BASE}/products/${productId}/availability`);
+    const res = await fetch(`${apiBase}/products/${productId}/availability`);
     if (!res.ok) return { available: false, quantity: 0 };
     const data = await res.json();
     return { available: data.available !== false, quantity: data.quantity || 1 };
   } catch {
-    const prod = await getMerchantProduct(productId);
+    const prod = await getMerchantProduct(productId, apiBase);
     return { available: prod?.available !== false, quantity: 1 };
   }
 };
 
-const createMerchantOrder = async ({ courseId, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com' }) => {
-  const res = await fetch(`${MERCHANT_API_BASE}/payment/create-order`, {
+const createMerchantOrder = async ({ courseId, customerName = 'Buyer Agent Customer', customerEmail = 'buyer.agent@example.com', merchantApiBase }) => {
+  const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
+  const res = await fetch(`${apiBase}/payment/create-order`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ courseId, customerName, customerEmail })
@@ -53,8 +57,9 @@ const createMerchantOrder = async ({ courseId, customerName = 'Buyer Agent Custo
   return data;
 };
 
-const verifyMerchantPayment = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId }) => {
-  const res = await fetch(`${MERCHANT_API_BASE}/payment/verify`, {
+const verifyMerchantPayment = async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, merchantApiBase }) => {
+  const apiBase = merchantApiBase || DEFAULT_MERCHANT_API_BASE;
+  const res = await fetch(`${apiBase}/payment/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId })

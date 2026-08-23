@@ -147,14 +147,14 @@ const toolDeclarations = [
  * Execute Tool Calls (Backend Control Layer)
  */
 const executeTool = async (name, args, sessionContext = {}) => {
-  const { userAuth = { maxAmount: 10000, currency: 'INR' }, customerName = 'Buyer Agent User', customerEmail = 'buyer@example.com' } = sessionContext;
+  const { userAuth = { maxAmount: 10000, currency: 'INR' }, customerName = 'Buyer Agent User', customerEmail = 'buyer@example.com', merchantApiBase } = sessionContext;
 
   logAudit('TOOL_INVOCATION_START', { tool: name, args });
 
   switch (name) {
     case 'searchProducts': {
       const { query, maxPrice } = args;
-      const products = await merchantService.searchMerchantProducts({ query, maxPrice });
+      const products = await merchantService.searchMerchantProducts({ query, maxPrice, merchantApiBase });
       const result = {
         products: products.map(p => ({
           id: p.id,
@@ -170,7 +170,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
     }
 
     case 'getProduct': {
-      const product = await merchantService.getMerchantProduct(args.productId);
+      const product = await merchantService.getMerchantProduct(args.productId, merchantApiBase);
       const result = {
         id: product.id,
         title: product.title,
@@ -186,7 +186,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
     }
 
     case 'checkAvailability': {
-      const avail = await merchantService.checkMerchantAvailability(args.productId);
+      const avail = await merchantService.checkMerchantAvailability(args.productId, merchantApiBase);
       logAudit('TOOL_INVOCATION_SUCCESS', { tool: name, available: avail.available });
       return avail;
     }
@@ -195,7 +195,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
       const { productId, quantity = 1 } = args;
 
       // 1. Fetch authoritative product data from merchant
-      const product = await merchantService.getMerchantProduct(productId);
+      const product = await merchantService.getMerchantProduct(productId, merchantApiBase);
       
       // 2. Authorization Engine validation (Strict spending limit check)
       const authCheck = AuthorizationService.validatePurchaseAuthorization({
@@ -227,7 +227,8 @@ const executeTool = async (name, args, sessionContext = {}) => {
       const merchantOrderResponse = await merchantService.createMerchantOrder({
         courseId: product.id,
         customerName,
-        customerEmail
+        customerEmail,
+        merchantApiBase
       });
 
       const internalOrderId = `ORD-${Date.now().toString().slice(-6)}`;
@@ -333,7 +334,8 @@ const executeTool = async (name, args, sessionContext = {}) => {
         razorpay_order_id: razorpayOrderId,
         razorpay_payment_id: paymentId,
         razorpay_signature: signature,
-        courseId: order.product.id
+        courseId: order.product.id,
+        merchantApiBase: order.merchantApiBase || merchantApiBase
       });
 
       order.status = 'confirmed';

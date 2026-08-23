@@ -29,20 +29,35 @@ Agent Purchase Workflow:
 /**
  * Helper: Extract structured intent from natural language prompt
  */
-const extractPurchaseIntent = (message) => {
+const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   const text = message.toLowerCase();
   
   // 1. Extract budget / spending limit
-  let maxPrice = 10000; // default 10k
-  const priceMatches = text.match(/(?:under|below|up to|max|upto|within|budget of|price of|price upto|price up to|of price upto|of price up to|for|<=|<)\s*(?:₹|rs\.?|inr)?\s*([\d,]+)/i) ||
+  let maxPrice = defaultLimit;
+  let hasExplicitBudget = false;
+  
+  const priceMatches = text.match(/(?:under|below|up to|max|upto|within|budget of|price of|price upto|price up to|of price upto|of price up to|worth upto|worth up to|worth|for|<=|<)\s*(?:₹|rs\.?|inr)?\s*([\d,]+)/i) ||
                        text.match(/(?:₹|rs\.?|inr)\s*([\d,]+)/i);
   if (priceMatches && priceMatches[1]) {
     maxPrice = parseInt(priceMatches[1].replace(/,/g, ''), 10);
+    hasExplicitBudget = true;
   }
 
   // 2. Dynamic & Comprehensive Topic Recognition (Ordered by Specificity)
   let query = '';
-  if (text.includes('ai & machine learning') || text.includes('ai and machine learning') || text.includes('machine learning') || text.includes('deep learning') || text.includes('ai ml') || text.includes('artificial intelligence') || /\bai\b/i.test(text) || text.includes('neural')) {
+  if (text.includes('keyboard') || text.includes('keychron') || text.includes('mechanical')) {
+    query = 'keyboard';
+  } else if (text.includes('headphone') || text.includes('earphone') || text.includes('earbuds') || text.includes('sony') || text.includes('anc') || text.includes('audio')) {
+    query = 'headphones';
+  } else if (text.includes('charger') || text.includes('gan') || text.includes('adapter') || text.includes('power delivery')) {
+    query = 'charger';
+  } else if (text.includes('mouse') || text.includes('logitech') || text.includes('trackball')) {
+    query = 'mouse';
+  } else if (text.includes('fitness') || text.includes('smartwatch') || text.includes('smart band') || text.includes('fitbit') || text.includes('tracker')) {
+    query = 'fitness tracker';
+  } else if (text.includes('sleeve') || text.includes('laptop bag') || text.includes('case') || text.includes('bellroy')) {
+    query = 'laptop sleeve';
+  } else if (text.includes('ai & machine learning') || text.includes('ai and machine learning') || text.includes('machine learning') || text.includes('deep learning') || text.includes('ai ml') || text.includes('artificial intelligence') || /\bai\b/i.test(text) || text.includes('neural')) {
     query = 'AI & Machine Learning';
   } else if (text.includes('node') || text.includes('express') || text.includes('backend')) {
     query = 'Node.js';
@@ -68,19 +83,22 @@ const extractPurchaseIntent = (message) => {
       .replace(/purchase (a|an)?/gi, '')
       .replace(/i want (a|an)?/gi, '')
       .replace(/get me (a|an)?/gi, '')
-      .replace(/course (of|with|under|below|up to|upto|for).*/gi, '')
-      .replace(/(of|with|under|below|up to|upto|for|budget|price).*/gi, '')
+      .replace(/i only added a prompt for (a|an)?/gi, '')
+      .replace(/a prompt for (a|an)?/gi, '')
+      .replace(/course (of|with|under|below|up to|upto|for|worth).*/gi, '')
+      .replace(/(of|with|under|below|up to|upto|worth upto|worth up to|worth|for|budget|price).*/gi, '')
       .replace(/course/gi, '')
       .replace(/good ratings?/gi, '')
       .replace(/best/gi, '')
       .trim();
 
-    query = cleaned.length > 0 ? cleaned : 'AI';
+    query = cleaned.length > 0 ? cleaned : 'keyboard';
   }
 
   return {
     query,
     maxPrice,
+    hasExplicitBudget,
     currency: 'INR',
     ratingRequirement: text.includes('good') || text.includes('top') || text.includes('best') ? 'high' : 'standard'
   };
@@ -95,20 +113,34 @@ const processPurchaseRequest = async ({
   customerName = 'Student Buyer', 
   customerEmail = 'student@example.com',
   autoExecutePayment = true,
-  savedPaymentMethod = { type: 'card', last4: '1007', brand: 'Visa' }
+  savedPaymentMethod = { type: 'card', last4: '1007', brand: 'Visa', autoDebitLimit: 15000 },
+  merchantApiBase
 }) => {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
-  const intent = extractPurchaseIntent(message);
+  const cardLimit = Number(savedPaymentMethod?.autoDebitLimit) || 15000;
+  const intent = extractPurchaseIntent(message, cardLimit);
+
+  // Strict Dual-Boundary Spending Limits:
+  // 1. If user gave prompt limit (e.g. 5000), effective limit is min(5000, cardLimit)
+  // 2. If user did not give prompt limit, effective limit is strictly the cardLimit (e.g. 2000)
+  const effectiveMaxLimit = intent.hasExplicitBudget 
+    ? Math.min(intent.maxPrice, cardLimit)
+    : cardLimit;
+
+  intent.maxPrice = effectiveMaxLimit;
+  intent.cardLimit = cardLimit;
 
   const sessionContext = {
     userAuth: {
-      maxAmount: intent.maxPrice,
+      maxAmount: effectiveMaxLimit,
+      cardLimit: cardLimit,
       currency: intent.currency
     },
     customerName,
     customerEmail,
     savedPaymentMethod,
-    autoExecutePayment
+    autoExecutePayment,
+    merchantApiBase
   };
 
   const steps = [];
@@ -123,7 +155,11 @@ const processPurchaseRequest = async ({
     });
   };
 
-  addStep(`Understanding purchase intent: Query="${intent.query}", MaxBudget=₹${intent.maxPrice.toLocaleString()} (Pre-Saved Limit: ₹${(savedPaymentMethod?.autoDebitLimit || 15000).toLocaleString()})`);
+  if (intent.hasExplicitBudget) {
+    addStep(`Understanding purchase intent: Query="${intent.query}", Prompt Budget=₹${intent.maxPrice.toLocaleString()} (Pre-Saved Limit: ₹${cardLimit.toLocaleString()})`);
+  } else {
+    addStep(`Understanding purchase intent: Query="${intent.query}", Enforcing Pre-Authorized Limit=₹${cardLimit.toLocaleString()}`);
+  }
 
   // Fallback Rule-Based Agent Engine if Gemini API key is placeholder
   const isDummyApiKey = !apiKey || apiKey.trim() === '' || apiKey.includes('YOUR_GEMINI') || apiKey.includes('XXXX') || !apiKey.startsWith('AIzaSy');
@@ -268,17 +304,18 @@ const runSimulatedBuyerAgent = async ({
   const searchResult = await executeTool('searchProducts', { query: intent.query, maxPrice: intent.maxPrice }, sessionContext);
   toolCalls.push({ tool: 'searchProducts', args: { query: intent.query, maxPrice: intent.maxPrice }, result: searchResult });
   steps.push({
-    text: `Searching merchant courses for "${intent.query}" under ₹${intent.maxPrice.toLocaleString()}`,
+    text: `Searching merchant catalog for "${intent.query}" under ₹${intent.maxPrice.toLocaleString()}`,
     status: 'completed',
     count: searchResult.products?.length || 0
   });
 
   if (!searchResult.products || searchResult.products.length === 0) {
-    steps.push({ text: `No courses found matching "${intent.query}" within ₹${intent.maxPrice}.`, status: 'failed' });
+    const limitLabel = intent.hasExplicitBudget ? `prompt budget of ₹${intent.maxPrice.toLocaleString()}` : `pre-authorized card limit of ₹${intent.maxPrice.toLocaleString()}`;
+    steps.push({ text: `No products found matching "${intent.query}" within your ${limitLabel}.`, status: 'failed' });
     return {
       success: false,
       intent,
-      reply: `I searched the merchant catalog for **"${intent.query}"** courses under **₹${intent.maxPrice}**, but no matching courses were found within your spending limit.`,
+      reply: `⚠️ **Purchase Blocked by Pre-Authorization Limit**:\n\nI searched the merchant catalog for **"${intent.query}"**, but no matching items were found within your **${limitLabel}**.\n\nNo order was created and 0 charges occurred.`,
       steps,
       toolCalls,
       selectedProduct: null,
@@ -295,6 +332,25 @@ const runSimulatedBuyerAgent = async ({
     text: `Selected top candidate: "${productDetails.title}" (Rating: ${productDetails.rating}⭐, Authoritative Price: ₹${productDetails.price})`,
     status: 'completed'
   });
+
+  // Strict Pre-Authorization Check
+  if (productDetails.price > intent.maxPrice) {
+    const limitLabel = intent.hasExplicitBudget ? `prompt budget limit (₹${intent.maxPrice.toLocaleString()})` : `pre-authorized card limit (₹${intent.maxPrice.toLocaleString()})`;
+    steps.push({
+      text: `Pre-Authorization Blocked: Product price ₹${productDetails.price} exceeds ${limitLabel}.`,
+      status: 'denied'
+    });
+    return {
+      success: false,
+      intent,
+      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\nThe product **${productDetails.title}** costs **₹${productDetails.price.toLocaleString()}**, which exceeds your **${limitLabel}**. No payment was charged.`,
+      steps,
+      toolCalls,
+      selectedProduct: productDetails,
+      order: null,
+      requiresCheckout: false
+    };
+  }
 
   // Step 3: checkAvailability
   const availResult = await executeTool('checkAvailability', { productId: candidate.id }, sessionContext);
@@ -362,14 +418,14 @@ const runSimulatedBuyerAgent = async ({
       status: 'completed'
     });
     steps.push({
-      text: `Order Confirmed & Digital Course Access Activated!`,
+      text: `Order Confirmed & Access Granted!`,
       status: 'completed'
     });
   }
 
   const reply = autoExecutePayment ?
-    `🎉 **Purchase Completed Autonomously! (0 Human Intervention)**\n\nI have successfully evaluated, purchased, and verified **${productDetails.title}** for you:\n\n- **Course**: ${productDetails.title}\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Prompt Authorized Budget**: ₹${intent.maxPrice.toLocaleString()} (Verified ✓)\n- **Pre-Saved Card Limit**: ₹${(savedPaymentMethod?.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured in Razorpay Dashboard ✓)\n- **Payment Method**: Pre-Saved ${savedPaymentMethod.brand || 'Visa'} (•••• ${savedPaymentMethod.last4 || '1007'})\n\nYour digital course enrollment is now active!` :
-    `I have discovered and evaluated the best course for you: **${productDetails.title}** (${productDetails.rating}⭐ rating).\n\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Authorized Limit**: ₹${intent.maxPrice.toLocaleString()} (Passed ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
+    `🎉 **Purchase Completed Autonomously! (0 Human Intervention)**\n\nI have successfully evaluated, purchased, and verified **${productDetails.title}** for you:\n\n- **Item**: ${productDetails.title}\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Prompt Authorized Budget**: ₹${intent.maxPrice.toLocaleString()} (Verified ✓)\n- **Pre-Saved Card Limit**: ₹${(savedPaymentMethod?.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured in Razorpay Dashboard ✓)\n- **Payment Method**: Pre-Saved ${savedPaymentMethod.brand || 'Visa'} (•••• ${savedPaymentMethod.last4 || '1007'})\n\nYour order is confirmed and active!` :
+    `I have discovered and evaluated the best product for you: **${productDetails.title}** (${productDetails.rating}⭐ rating).\n\n- **Authoritative Price**: ₹${orderResult.amount.toLocaleString()}\n- **Authorized Limit**: ₹${intent.maxPrice.toLocaleString()} (Passed ✓)\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
 
   return {
     success: true,
