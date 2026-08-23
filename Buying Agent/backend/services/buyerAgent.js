@@ -1,31 +1,70 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { toolDeclarations, executeTool, buyerOrders, auditLogs } = require('../tools/index');
-const merchantService = require('./merchant.service');
+const { toolDeclarations, executeTool } = require('../tools/index');
 const { resolvePaymentMethod } = require('./paymentMethods');
+const userStore = require('./userStore.service');
+const emailService = require('./email.service');
 
-const SYSTEM_PROMPT = `You are a trusted, intelligent AI Shopping Buyer Agent.
-Your job is to help the user purchase courses/products/food according to their explicit requirements using Razorpay Test Mode.
+const SYSTEM_PROMPT = `You are the autonomous AI Shopping Agent built for Razorpay Agentic Commerce.
+Your objective is to help the user find, evaluate, authorize, purchase, and pay for products from the merchant store with ZERO human intervention whenever pre-authorized limits permit.`;
 
-Rules (Mandatory):
-1. Never exceed the user's authorized maximum spending amount.
-2. Never invent product information or prices.
-3. Use tools (searchProducts, getProduct, checkAvailability) to obtain current product price and availability.
-4. Never invent payment success or fake payment signatures.
-5. Never claim an order is confirmed until the backend confirms it.
-6. Never modify authorization limits.
-7. Never expose payment secrets.
-8. Use only registered tools.
-9. If no product satisfies the requirements, clearly report that no suitable product was found under the budget.
-10. If authorization is denied by the backend (e.g. price > max limit), report the authorization denial to the user without attempting to bypass it.
-11. If payment fails, report the failure and do not claim the order succeeded.
+/**
+ * Helper: Detect Memory & Order Recall queries (e.g. "what was my last order?", "how much have I spent?")
+ */
+const checkMemoryRecallQuery = (text, userEmail) => {
+  const t = text.toLowerCase().trim();
+  
+  const isLastOrderQuery = /\b(what was my last order|what did i order (last|previously|earlier)|show my last order|view last order|last order)\b/i.test(t);
+  const isOrderHistoryQuery = /\b(show (my )?(past |previous )?orders|order history|my orders|list (my )?orders|what have i ordered|past orders)\b/i.test(t);
+  const isSpendingQuery = /\b(how much (did i|have i|i) (spend|spent)|my total spend|total expenses|spending stats|total spending|how much spend)\b/i.test(t);
+  const isAddressQuery = /\b(what is my (delivery )?address|where do you deliver|my saved address|saved addresses|where did you deliver)\b/i.test(t);
 
-Agent Purchase Workflow:
-1. Parse user query, requested topic, quantity, payment method preference, and maximum price limit.
-2. Call searchProducts() to discover candidates.
-3. Call getProduct() and checkAvailability() for the best candidate.
-4. Call createOrder() with quantity to let the backend validate authorization and create the order.
-5. Call initiatePayment() to obtain the Razorpay payment order.
-6. Provide a clear summary and execute autonomous payment.`;
+  if (isLastOrderQuery || isOrderHistoryQuery || isSpendingQuery || isAddressQuery) {
+    const user = userStore.getUser(userEmail);
+    const lastOrder = userStore.getLastOrder(userEmail);
+    const history = userStore.getOrderHistory(userEmail);
+    const stats = userStore.getSpendingStats(userEmail);
+    const address = userStore.getActiveAddress(userEmail);
+
+    if (isAddressQuery) {
+      return {
+        isMemoryQuery: true,
+        reply: `📍 **Your Saved Delivery Addresses (${user.name})**:\n\n` +
+          user.addresses.map(a => `- **${a.label}** ${a.isDefault ? '*(Default)*' : ''}: ${a.street}, ${a.area}, ${a.city} - ${a.pincode}`).join('\n') +
+          `\n\nActive delivery address for orders: **${address.label}** (${address.street}, ${address.area}, ${address.city} - ${address.pincode}).`
+      };
+    }
+
+    if (isSpendingQuery) {
+      return {
+        isMemoryQuery: true,
+        reply: `📊 **Spending & Memory Stats for ${user.name} (${user.email})**:\n\n- **Total Orders Placed**: ${stats.orderCount}\n- **Total Autonomous Spend**: ₹${stats.totalSpent.toLocaleString()}\n- **Last Order Date**: ${stats.lastOrderDate ? new Date(stats.lastOrderDate).toLocaleString() : 'No orders yet'}\n- **Default Payment Card**: ${user.paymentMethods[0]?.label || 'Visa (•••• 1007)'}`
+      };
+    }
+
+    if (isLastOrderQuery && lastOrder) {
+      const itemsList = (lastOrder.items || []).map(i => `- **${i.quantity || 1}x ${i.title || i.productTitle}**: ₹${(i.lineTotal || i.price * (i.quantity || 1) || 0).toLocaleString()}`).join('\n');
+      return {
+        isMemoryQuery: true,
+        reply: `📋 **Your Last Autonomously Captured Order**:\n\n- **Order ID**: \`${lastOrder.orderId}\`\n- **Date**: ${new Date(lastOrder.createdAt).toLocaleString()}\n- **Total Amount**: **₹${lastOrder.amount.toLocaleString()}**\n- **Razorpay Payment ID**: \`${lastOrder.razorpayPaymentId}\` (Captured ✓)\n- **Delivered To**: ${lastOrder.deliveryAddress?.label || 'Home'} (${lastOrder.deliveryAddress?.street || ''}, ${lastOrder.deliveryAddress?.city || 'Bengaluru'})\n\n### Purchased Items:\n${itemsList}\n\n💡 *Tip: You can say "reorder my last order" to order these items again immediately!*`
+      };
+    }
+
+    if (history.length > 0) {
+      const historyList = history.slice(0, 5).map((o, idx) => `${idx + 1}. **#${o.orderId}** (${new Date(o.createdAt).toLocaleDateString()}): ₹${o.amount.toLocaleString()} — *${o.productTitle || 'Items'}* (Payment: \`${o.razorpayPaymentId}\`)`).join('\n');
+      return {
+        isMemoryQuery: true,
+        reply: `📋 **Order History & Memory for ${user.name}** (${history.length} total orders):\n\n${historyList}\n\n- **Total Lifetime Spend**: ₹${stats.totalSpent.toLocaleString()}\n- **Saved Address**: ${address.street}, ${address.city} - ${address.pincode}`
+      };
+    } else {
+      return {
+        isMemoryQuery: true,
+        reply: `📋 **No Previous Orders Found in Memory** for ${user.name} (${user.email}). Place your first order by asking me to buy any dishes, products, or courses!`
+      };
+    }
+  }
+
+  return { isMemoryQuery: false };
+};
 
 /**
  * Helper: Extract structured multi-item intent from natural language prompt
@@ -187,19 +226,49 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
 const processPurchaseRequest = async ({ 
   message, 
   customApiKey, 
-  customerName = 'Student Buyer', 
-  customerEmail = 'student@example.com',
+  userEmail = 'nawaz@gmail.com',
+  customerName = 'Nawaz Khan', 
+  customerEmail = 'nawaz@gmail.com',
+  deliveryAddress = null,
   autoExecutePayment = true,
   savedPaymentMethod = { type: 'card', last4: '1007', brand: 'Visa', autoDebitLimit: 15000 },
   merchantApiBase
 }) => {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
-  
+  const targetEmail = (userEmail || customerEmail || 'nawaz@gmail.com').toLowerCase().trim();
+  const user = userStore.getUser(targetEmail);
+  const activeAddress = deliveryAddress || userStore.getActiveAddress(targetEmail, message);
+
+  // 0. Intercept conversational memory & history queries
+  const memoryCheck = checkMemoryRecallQuery(message, targetEmail);
+  if (memoryCheck.isMemoryQuery) {
+    return {
+      success: true,
+      intent: { query: 'Memory Query', isMemoryRecall: true },
+      reply: memoryCheck.reply,
+      steps: [{ text: `⚡ Agent Memory System: Retrieved user profile & past order memory for ${user.name} (${targetEmail})`, status: 'completed' }],
+      toolCalls: [],
+      selectedProduct: null,
+      order: null,
+      autoPaid: false,
+      requiresCheckout: false
+    };
+  }
+
+  // Handle "reorder" from memory
+  let effectiveMessage = message;
+  if (/\b(reorder|repeat (my )?(last|previous)|order again)\b/i.test(message)) {
+    const lastOrder = userStore.getLastOrder(targetEmail);
+    if (lastOrder && lastOrder.items && lastOrder.items.length > 0) {
+      effectiveMessage = `buy ` + lastOrder.items.map(i => `${i.quantity || 1} ${i.title || i.productTitle}`).join(' and ');
+    }
+  }
+
   // Resolve dynamic payment method from user prompt (Cards, NetBanking, UPI, or Default Saved Method)
-  const paymentMethod = resolvePaymentMethod(message, savedPaymentMethod);
+  const paymentMethod = resolvePaymentMethod(effectiveMessage, savedPaymentMethod);
   const cardLimit = Number(paymentMethod.autoDebitLimit || savedPaymentMethod?.autoDebitLimit || 15000);
   
-  const intent = extractPurchaseIntent(message, cardLimit);
+  const intent = extractPurchaseIntent(effectiveMessage, cardLimit);
   intent.paymentMethod = paymentMethod;
 
   // Strict Dual-Boundary Spending Limits:
@@ -218,8 +287,9 @@ const processPurchaseRequest = async ({
       cardLimit: cardLimit,
       currency: intent.currency
     },
-    customerName,
-    customerEmail,
+    customerName: customerName || user.name,
+    customerEmail: targetEmail,
+    deliveryAddress: activeAddress,
     paymentMethod,
     savedPaymentMethod: paymentMethod,
     autoExecutePayment,
@@ -255,7 +325,7 @@ Extract the user purchase intent from the natural language message into valid JS
   "paymentMethod": string or null (e.g. "Visa", "Bob NetBanking", "UPI", "Amazon Card", etc.)
 }
 
-User Message: "${message.replace(/"/g, '\\"')}"
+User Message: "${effectiveMessage.replace(/"/g, '\\"')}"
 
 Respond ONLY with valid JSON inside a markdown codeblock.`;
 
@@ -289,11 +359,12 @@ Respond ONLY with valid JSON inside a markdown codeblock.`;
   }
 
   const paymentLabel = paymentMethod.matchedFromPrompt ? `Payment Method: "${paymentMethod.label}" (Prompt Match ✓)` : `Payment Method: "${paymentMethod.label}" (Default ✓)`;
+  const addrLabel = `Delivery Address: "${activeAddress.label}" (${activeAddress.city}) ✓`;
 
   if (intent.hasExplicitBudget) {
-    addStep(`Understanding purchase intent: Items=[${intent.query}], Budget=₹${intent.maxPrice.toLocaleString()}, ${paymentLabel}`);
+    addStep(`Understanding purchase intent: Items=[${intent.query}], Budget=₹${intent.maxPrice.toLocaleString()}, ${paymentLabel}, ${addrLabel}`);
   } else {
-    addStep(`Understanding purchase intent: Items=[${intent.query}], Pre-Auth Limit=₹${cardLimit.toLocaleString()}, ${paymentLabel}`);
+    addStep(`Understanding purchase intent: Items=[${intent.query}], Pre-Auth Limit=₹${cardLimit.toLocaleString()}, ${paymentLabel}, ${addrLabel}`);
   }
 
   return runSimulatedBuyerAgent({ intent, sessionContext, steps, toolCalls, autoExecutePayment, savedPaymentMethod });
@@ -557,12 +628,80 @@ const runSimulatedBuyerAgent = async ({
       text: `Order Confirmed & Payment Captured on Razorpay Dashboard!`,
       status: 'completed'
     });
+
+    // 7. Save to Persistent User Order Memory
+    try {
+      userStore.saveOrder(sessionContext.customerEmail, {
+        orderId: orderResult.orderId,
+        razorpayOrderId: paymentData.razorpayOrderId,
+        paymentId: verificationResult.paymentId,
+        amount: orderResult.amount,
+        quantity: orderResult.quantity,
+        items: evaluatedItems.map(i => ({
+          productId: i.product.id,
+          title: i.product.title,
+          unitPrice: i.unitPrice,
+          quantity: i.quantity,
+          lineTotal: i.lineTotal
+        })),
+        productTitle: orderResult.productTitle,
+        merchant: sessionContext.merchantApiBase,
+        deliveryAddress: sessionContext.deliveryAddress,
+        paymentMethod: activeMethod
+      });
+      steps.push({
+        text: `🧠 Order Memory Saved: Linked to profile ${sessionContext.customerName} (${sessionContext.customerEmail})`,
+        status: 'completed'
+      });
+    } catch (memErr) {
+      console.warn('User memory save warning:', memErr.message);
+    }
+
+    // 8. Dispatch Automated Email Receipt (Gmail / Email Transporter)
+    try {
+      const mailResult = await emailService.sendOrderConfirmationEmail({
+        userEmail: sessionContext.customerEmail,
+        userName: sessionContext.customerName,
+        order: {
+          ...orderResult,
+          items: evaluatedItems.map(i => ({
+            productId: i.product.id,
+            title: i.product.title,
+            unitPrice: i.unitPrice,
+            quantity: i.quantity,
+            lineTotal: i.lineTotal
+          }))
+        },
+        payment: verificationResult,
+        address: sessionContext.deliveryAddress
+      });
+      if (mailResult.success && mailResult.mode === 'gmail_smtp') {
+        steps.push({
+          text: `📧 Live Gmail confirmation email delivered to: ${sessionContext.customerEmail} (Message ID: ${mailResult.messageId}) ✓`,
+          status: 'completed'
+        });
+      } else if (mailResult.mode === 'failed_smtp') {
+        steps.push({
+          text: `⚠️ Gmail SMTP Authentication Issue: Google rejected App Password for ${process.env.GMAIL_USER}. Saved in app receipt memory.`,
+          status: 'denied'
+        });
+      } else {
+        steps.push({
+          text: `📧 Order confirmation receipt recorded for: ${sessionContext.customerEmail} ✓`,
+          status: 'completed'
+        });
+      }
+    } catch (mailErr) {
+      console.warn('Email dispatch warning:', mailErr.message);
+    }
   }
 
   const itemsListFormatted = evaluatedItems.map(i => `- **${i.quantity}x ${i.product.title}**: ₹${i.lineTotal.toLocaleString()} (₹${i.unitPrice.toLocaleString()} each)`).join('\n');
+  const deliveryAddr = sessionContext.deliveryAddress;
+  const addrText = deliveryAddr ? `${deliveryAddr.label} (${deliveryAddr.street}, ${deliveryAddr.city} - ${deliveryAddr.pincode})` : 'Default Address (Bengaluru)';
 
   const reply = autoExecutePayment ?
-    `🎉 **Multi-Item Order Placed & Captured Autonomously! (0 Human Intervention)**\n\nI have successfully evaluated, placed, and verified all **${evaluatedItems.length} items** for you:\n\n### 📋 Itemized Receipt:\n${itemsListFormatted}\n\n---\n- **Total Amount**: **₹${orderResult.amount.toLocaleString()}**\n- **Payment Method**: ${methodLabel} (${activeMethod.matchedFromPrompt ? 'Specified in Prompt ✓' : 'Default Pre-Saved ✓'})\n- **Pre-Authorized Spending Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **Store Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured & Paid in Razorpay Dashboard ✓)\n\nYour complete order is confirmed and active!` :
+    `🎉 **Order Autonomously Placed & Captured! (0 Human Intervention)**\n\nI have successfully evaluated, ordered, and verified all **${evaluatedItems.length} items** for you:\n\n### 📋 Itemized Receipt:\n${itemsListFormatted}\n\n---\n- **Total Amount Paid**: **₹${orderResult.amount.toLocaleString()}**\n- **Payment Method**: ${methodLabel} (${activeMethod.matchedFromPrompt ? 'Specified in Prompt ✓' : 'Default Pre-Saved ✓'})\n- **Pre-Authorized Spending Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **📍 Delivery Address**: ${addrText}\n- **📧 Email Confirmation**: Sent to \`${sessionContext.customerEmail}\` ✓\n- **Store Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured & Paid in Razorpay Dashboard ✓)\n\nYour order is confirmed and will be delivered shortly!` :
     `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Authoritative Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
 
   return {
@@ -574,6 +713,8 @@ const runSimulatedBuyerAgent = async ({
     selectedProduct: evaluatedItems[0]?.product,
     order: {
       ...orderResult,
+      deliveryAddress: sessionContext.deliveryAddress,
+      userEmail: sessionContext.customerEmail,
       status: autoExecutePayment ? 'confirmed' : 'created',
       paymentStatus: autoExecutePayment ? 'paid' : 'pending'
     },

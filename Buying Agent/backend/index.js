@@ -5,6 +5,8 @@ require('dotenv').config();
 
 const { processPurchaseRequest } = require('./services/buyerAgent');
 const { executeTool, buyerOrders, auditLogs } = require('./tools/index');
+const userStore = require('./services/userStore.service');
+const emailService = require('./services/email.service');
 
 const app = express();
 const PORT = process.env.PORT || 8001;
@@ -19,39 +21,89 @@ app.use(express.json());
 // Serve static embeddable SDK files (e.g. /sdk/razorpay-agent.js)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== SPECIFICATION: BUYER AGENT ROUTES ====================
+// ==================== USER AUTHENTICATION & MEMORY ROUTES ====================
 
-// Default pre-saved payment configuration
-let userSavedPayment = {
-  enabled: true,
-  type: 'card',
-  brand: 'Visa (Domestic)',
-  cardNumber: '4100 2800 0000 1007',
-  last4: '1007',
-  expiry: '12/28',
-  holder: 'Student Buyer',
-  autoDebitLimit: 15000,
-  provider: 'Razorpay Domestic Test Tokenized Card'
-};
+// Active session email (default to nawaz@gmail.com)
+let activeUserEmail = 'nawaz@gmail.com';
+
+// POST /api/user/login - Authenticate or switch user by Gmail/Email
+app.post('/api/user/login', (req, res) => {
+  const { email } = req.body;
+  if (!email || email.trim() === '') {
+    return res.status(400).json({ success: false, message: 'Email / Gmail is required.' });
+  }
+  const cleanEmail = email.toLowerCase().trim();
+  activeUserEmail = cleanEmail;
+  const user = userStore.getUser(cleanEmail);
+  const stats = userStore.getSpendingStats(cleanEmail);
+  res.json({
+    success: true,
+    message: `Logged in successfully as ${user.name} (${cleanEmail})`,
+    user,
+    stats
+  });
+});
+
+// GET /api/user/profile - Get currently authenticated user profile & memory
+app.get('/api/user/profile', (req, res) => {
+  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const user = userStore.getUser(email);
+  const stats = userStore.getSpendingStats(email);
+  res.json({
+    success: true,
+    user,
+    stats
+  });
+});
+
+// POST /api/user/address - Add a new delivery address
+app.post('/api/user/address', (req, res) => {
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const newAddr = userStore.addAddress(email, req.body);
+  res.json({ success: true, message: 'Address added successfully', address: newAddr });
+});
+
+// POST /api/user/address/default - Set default delivery address
+app.post('/api/user/address/default', (req, res) => {
+  const { addressId } = req.body;
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const addresses = userStore.setDefaultAddress(email, addressId);
+  res.json({ success: true, message: 'Default address updated', addresses });
+});
+
+// GET /api/user/orders - Get user's order history from memory
+app.get('/api/user/orders', (req, res) => {
+  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const orders = userStore.getOrderHistory(email);
+  res.json({ success: true, count: orders.length, orders });
+});
+
+// GET /api/user/emails - View dispatched confirmation email receipts
+app.get('/api/user/emails', (req, res) => {
+  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const emails = emailService.getSentEmails(email);
+  res.json({ success: true, count: emails.length, emails });
+});
+
+// ==================== SPECIFICATION: BUYER AGENT ROUTES ====================
 
 // GET /api/agent/saved-payment-method - Get user pre-saved payment method
 app.get('/api/agent/saved-payment-method', (req, res) => {
-  res.json({ success: true, paymentMethod: userSavedPayment });
+  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const paymentMethod = userStore.getDefaultPaymentMethod(email);
+  res.json({ success: true, paymentMethod });
 });
 
 // POST /api/agent/saved-payment-method - Update user pre-saved payment method
 app.post('/api/agent/saved-payment-method', (req, res) => {
-  const { enabled, brand, last4, expiry, holder, autoDebitLimit } = req.body;
-  userSavedPayment = {
-    ...userSavedPayment,
-    ...(enabled !== undefined ? { enabled } : {}),
-    ...(brand ? { brand } : {}),
-    ...(last4 ? { last4 } : {}),
-    ...(expiry ? { expiry } : {}),
-    ...(holder ? { holder } : {}),
-    ...(autoDebitLimit ? { autoDebitLimit: Number(autoDebitLimit) } : {})
-  };
-  res.json({ success: true, paymentMethod: userSavedPayment, message: 'Saved payment details updated successfully.' });
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const user = userStore.getUser(email);
+  const { autoDebitLimit } = req.body;
+  if (autoDebitLimit && user.paymentMethods[0]) {
+    user.paymentMethods[0].autoDebitLimit = Number(autoDebitLimit);
+    userStore.saveMemory();
+  }
+  res.json({ success: true, paymentMethod: user.paymentMethods[0], message: 'Saved payment details updated successfully.' });
 });
 
 // POST /api/agent/purchase - Main Natural-Language Purchase Endpoint (Spec Section 5)
@@ -62,8 +114,10 @@ app.post('/api/agent/purchase', async (req, res) => {
       customApiKey,
       customerName,
       customerEmail,
-      autoExecutePayment = userSavedPayment.enabled,
-      savedPaymentMethod = userSavedPayment,
+      userEmail,
+      addressId,
+      autoExecutePayment = true,
+      savedPaymentMethod,
       merchantApiBase
     } = req.body;
 
@@ -74,13 +128,20 @@ app.post('/api/agent/purchase', async (req, res) => {
       });
     }
 
+    const targetEmail = (userEmail || customerEmail || activeUserEmail).toLowerCase().trim();
+    const user = userStore.getUser(targetEmail);
+    const activeAddress = userStore.getActiveAddress(targetEmail, message);
+    const defaultPm = savedPaymentMethod || userStore.getDefaultPaymentMethod(targetEmail);
+
     const response = await processPurchaseRequest({
       message,
       customApiKey,
-      customerName: customerName || userSavedPayment.holder,
-      customerEmail: customerEmail || 'student@example.com',
+      userEmail: targetEmail,
+      customerName: customerName || user.name,
+      customerEmail: targetEmail,
+      deliveryAddress: activeAddress,
       autoExecutePayment,
-      savedPaymentMethod,
+      savedPaymentMethod: defaultPm,
       merchantApiBase
     });
 
