@@ -39,6 +39,7 @@ const initialUsers = {
       {
         id: 'pm_visa_1007',
         type: 'card',
+        method: 'card',
         brand: 'Visa (Domestic)',
         last4: '1007',
         cardNumber: '4100 2800 0000 1007',
@@ -46,11 +47,12 @@ const initialUsers = {
         holder: 'Nawaz Khan',
         autoDebitLimit: 15000,
         isDefault: true,
-        label: 'Visa (Domestic) (•••• 1007)'
+        label: 'Visa Debit (•••• 1007)'
       },
       {
         id: 'pm_icici_4022',
         type: 'card',
+        method: 'card',
         brand: 'Amazon Pay ICICI Card',
         last4: '4022',
         cardNumber: '4315 2800 0000 4022',
@@ -61,23 +63,104 @@ const initialUsers = {
         label: 'Amazon Pay ICICI (•••• 4022)'
       },
       {
+        id: 'pm_hdfc_3003',
+        type: 'card',
+        method: 'card',
+        brand: 'HDFC Millennia Card',
+        last4: '3003',
+        cardNumber: '4100 2800 0000 3003',
+        expiry: '05/30',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 20000,
+        isDefault: false,
+        label: 'HDFC Millennia (•••• 3003)'
+      },
+      {
+        id: 'pm_rupay_1005',
+        type: 'card',
+        method: 'card',
+        brand: 'RuPay Domestic Debit',
+        last4: '1005',
+        cardNumber: '6527 6589 0000 1005',
+        expiry: '11/27',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 15000,
+        isDefault: false,
+        label: 'RuPay Debit (•••• 1005)'
+      },
+      {
         id: 'pm_bob_nb',
         type: 'netbanking',
+        method: 'netbanking',
         bank: 'BARB_R',
-        bankName: 'Bank of Baroda (BOB)',
+        bankName: 'Bank of Baroda',
         holder: 'Nawaz Khan',
         autoDebitLimit: 50000,
         isDefault: false,
-        label: 'Bank of Baroda NetBanking'
+        label: 'Bank of Baroda (BOB) NetBanking'
       },
       {
-        id: 'pm_upi_hdfc',
+        id: 'pm_hdfc_nb',
+        type: 'netbanking',
+        method: 'netbanking',
+        bank: 'HDFC',
+        bankName: 'HDFC Bank',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 50000,
+        isDefault: false,
+        label: 'HDFC Bank NetBanking'
+      },
+      {
+        id: 'pm_sbi_nb',
+        type: 'netbanking',
+        method: 'netbanking',
+        bank: 'SBIN',
+        bankName: 'State Bank of India',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 50000,
+        isDefault: false,
+        label: 'SBI NetBanking'
+      },
+      {
+        id: 'pm_icici_nb',
+        type: 'netbanking',
+        method: 'netbanking',
+        bank: 'ICIC',
+        bankName: 'ICICI Bank',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 50000,
+        isDefault: false,
+        label: 'ICICI Bank NetBanking'
+      },
+      {
+        id: 'pm_upi_gpay',
         type: 'upi',
+        method: 'upi',
         vpa: 'nawaz@okhdfcbank',
         holder: 'Nawaz Khan',
-        autoDebitLimit: 10000,
+        autoDebitLimit: 25000,
         isDefault: false,
-        label: 'UPI (nawaz@okhdfcbank)'
+        label: 'Google Pay UPI (nawaz@okhdfcbank)'
+      },
+      {
+        id: 'pm_upi_phonepe',
+        type: 'upi',
+        method: 'upi',
+        vpa: 'nawaz@ybl',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 25000,
+        isDefault: false,
+        label: 'PhonePe UPI (nawaz@ybl)'
+      },
+      {
+        id: 'pm_upi_paytm',
+        type: 'upi',
+        method: 'upi',
+        vpa: 'nawaz@paytm',
+        holder: 'Nawaz Khan',
+        autoDebitLimit: 25000,
+        isDefault: false,
+        label: 'Paytm UPI (nawaz@paytm)'
       }
     ],
     orders: []
@@ -129,7 +212,21 @@ class UserStoreService {
       if (fs.existsSync(MEMORY_FILE)) {
         const data = fs.readFileSync(MEMORY_FILE, 'utf8');
         const parsed = JSON.parse(data);
-        this.users = { ...this.users, ...parsed };
+        for (const [em, u] of Object.entries(parsed)) {
+          if (this.users[em]) {
+            const initialPms = initialUsers[em]?.paymentMethods || initialUsers['nawaz@gmail.com'].paymentMethods;
+            const savedPms = u.paymentMethods || [];
+            const mergedPms = [...initialPms];
+            savedPms.forEach(spm => {
+              const idx = mergedPms.findIndex(p => p.id === spm.id);
+              if (idx >= 0) mergedPms[idx] = { ...mergedPms[idx], ...spm };
+              else mergedPms.push(spm);
+            });
+            this.users[em] = { ...this.users[em], ...u, paymentMethods: mergedPms };
+          } else {
+            this.users[em] = u;
+          }
+        }
       } else {
         this.saveMemory();
       }
@@ -249,6 +346,31 @@ class UserStoreService {
   getDefaultPaymentMethod(email) {
     const user = this.getUser(email);
     return user.paymentMethods.find(pm => pm.isDefault) || user.paymentMethods[0];
+  }
+
+  // Set default payment method
+  setDefaultPaymentMethod(email, methodId) {
+    const user = this.getUser(email);
+    user.paymentMethods.forEach(pm => {
+      pm.isDefault = (pm.id === methodId);
+    });
+    this.saveMemory();
+    return this.getDefaultPaymentMethod(email);
+  }
+
+  // Update payment method spending limits or details
+  updatePaymentMethod(email, methodId, updateData) {
+    const user = this.getUser(email);
+    const target = user.paymentMethods.find(pm => pm.id === methodId) || user.paymentMethods[0];
+    if (target) {
+      if (updateData.autoDebitLimit) target.autoDebitLimit = Number(updateData.autoDebitLimit);
+      if (updateData.holder) target.holder = updateData.holder;
+      if (updateData.isDefault) {
+        user.paymentMethods.forEach(pm => { pm.isDefault = (pm.id === target.id); });
+      }
+      this.saveMemory();
+    }
+    return target;
   }
 
   // Save new order to user's order memory

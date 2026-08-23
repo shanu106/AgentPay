@@ -1,6 +1,6 @@
 /**
  * Razorpay Agentic Commerce SDK (Embeddable Widget)
- * Enables autonomous, pre-authorized, zero-click AI shopping on any merchant platform.
+ * Institutional-Grade Autonomous AI Buying & Pre-Authorized Auto-Debit Engine
  * 
  * Usage:
  * <script 
@@ -26,7 +26,7 @@
     merchantApi: currentScript?.getAttribute('data-merchant-api') || window.location.origin + '/api',
     agentApi: currentScript?.getAttribute('data-agent-api') || 'http://localhost:8001/api/agent',
     autoDebit: currentScript?.getAttribute('data-auto-debit') !== 'false',
-    theme: currentScript?.getAttribute('data-theme') || 'razorpay-blue',
+    theme: currentScript?.getAttribute('data-theme') || 'razorpay-navy',
     position: currentScript?.getAttribute('data-position') || 'bottom-right'
   };
 
@@ -35,8 +35,9 @@
   let isSettingsOpen = false;
   let isLoginModalOpen = false;
   let isLoading = false;
+  let activeTab = 'cards'; // 'cards' | 'netbanking' | 'upi'
   let messages = [];
-  
+
   let currentUser = {
     name: 'Nawaz Khan',
     email: 'nawaz@gmail.com',
@@ -46,21 +47,29 @@
   };
 
   let currentAddress = {
+    id: 'addr_home',
     label: 'Home',
+    recipientName: 'Nawaz Khan',
     street: 'Flat 402, Sunshine Heights, 12th Main',
     area: 'Koramangala 4th Block',
     city: 'Bengaluru',
-    pincode: '560034'
+    pincode: '560034',
+    isDefault: true
   };
 
   let savedPayment = {
+    id: 'pm_visa_1007',
     enabled: config.autoDebit,
+    type: 'card',
+    method: 'card',
     brand: 'Visa (Domestic)',
     last4: '1007',
     holder: 'Nawaz Khan',
     autoDebitLimit: 15000,
-    cardNumber: '4100 2800 0000 1007'
+    label: 'Visa Debit (•••• 1007)'
   };
+
+  let allPaymentMethods = [];
 
   // Fetch initial profile & saved payment from agent backend
   function fetchUserProfile(email) {
@@ -74,9 +83,12 @@
             currentAddress = data.user.addresses.find(a => a.isDefault) || data.user.addresses[0];
           }
           if (data.user.paymentMethods && data.user.paymentMethods.length > 0) {
-            savedPayment = { ...savedPayment, ...data.user.paymentMethods[0] };
+            allPaymentMethods = data.user.paymentMethods;
+            const defPm = data.user.paymentMethods.find(pm => pm.isDefault) || data.user.paymentMethods[0];
+            savedPayment = { ...savedPayment, ...defPm };
           }
           updateWidgetHeader();
+          renderPaymentOptionsInSettings();
         }
       })
       .catch(() => {});
@@ -84,53 +96,56 @@
 
   fetchUserProfile();
 
-  // Inject Styles
+  // Inject High-Trust Institutional CSS Styles
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     .rzp-agent-root {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      font-size: 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 13.5px;
       line-height: 1.5;
       color: #0f172a;
       box-sizing: border-box;
       z-index: 999999;
+      -webkit-font-smoothing: antialiased;
     }
     .rzp-agent-root *, .rzp-agent-root *::before, .rzp-agent-root *::after {
       box-sizing: border-box;
     }
     
-    /* Floating Trigger Button */
+    /* Institutional Floating Trigger Button */
     .rzp-agent-trigger {
       position: fixed;
       bottom: 24px;
       right: 24px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       padding: 12px 18px 12px 14px;
-      background: linear-gradient(135deg, #0c2340 0%, #002970 50%, #0284c7 100%);
+      background: linear-gradient(135deg, #07192f 0%, #0c2340 50%, #0a3a78 100%);
       color: #ffffff;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.25);
       border-radius: 9999px;
       cursor: pointer;
-      box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.4), 0 8px 10px -6px rgba(0, 41, 112, 0.3);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 10px 25px -5px rgba(2, 132, 199, 0.45), 0 8px 12px -6px rgba(12, 35, 64, 0.4);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       z-index: 999999;
       user-select: none;
     }
     .rzp-agent-trigger:hover {
-      transform: translateY(-3px) scale(1.02);
-      box-shadow: 0 20px 30px -10px rgba(2, 132, 199, 0.6);
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 20px 35px -8px rgba(2, 132, 199, 0.6);
+      border-color: rgba(56, 189, 248, 0.5);
     }
     .rzp-agent-trigger .pulse-icon {
       position: relative;
       width: 32px;
       height: 32px;
-      background: #0284c7;
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 2px 8px rgba(2, 132, 199, 0.5);
     }
     .rzp-agent-trigger .pulse-ring {
       position: absolute;
@@ -138,7 +153,7 @@
       height: 100%;
       border-radius: 50%;
       border: 2px solid #38bdf8;
-      animation: rzpPulse 2s infinite;
+      animation: rzpPulse 2.2s infinite;
     }
     @keyframes rzpPulse {
       0% { transform: scale(1); opacity: 0.9; }
@@ -151,26 +166,30 @@
     }
     .rzp-agent-trigger-title {
       font-weight: 700;
-      font-size: 13px;
+      font-size: 13.5px;
       letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .rzp-agent-trigger-sub {
       font-size: 11px;
       color: #93c5fd;
+      font-weight: 500;
     }
 
-    /* Copilot Modal Drawer */
+    /* Copilot Institutional Modal Drawer */
     .rzp-agent-drawer {
       position: fixed;
       bottom: 90px;
       right: 24px;
       width: 440px;
       max-width: calc(100vw - 32px);
-      height: 640px;
+      height: 650px;
       max-height: calc(100vh - 120px);
       background: #ffffff;
       border-radius: 20px;
-      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(15, 23, 42, 0.08);
+      box-shadow: 0 25px 50px -12px rgba(12, 35, 64, 0.35), 0 0 0 1px rgba(12, 35, 64, 0.08);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -186,45 +205,51 @@
       pointer-events: auto;
     }
 
-    /* Drawer Header */
+    /* Razorpay Enterprise Header */
     .rzp-agent-header {
       padding: 14px 18px;
-      background: linear-gradient(135deg, #0c2340 0%, #002970 100%);
+      background: linear-gradient(135deg, #07192f 0%, #0c2340 60%, #0a3a78 100%);
       color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
     }
     .rzp-agent-header-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
     .rzp-agent-badge-icon {
-      width: 32px;
-      height: 32px;
-      background: #0284c7;
-      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+      border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 800;
+      font-weight: 900;
       color: #ffffff;
-      font-size: 16px;
+      font-size: 17px;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.4);
+      letter-spacing: -0.5px;
     }
     .rzp-agent-title-wrap h3 {
       margin: 0;
       font-size: 14px;
       font-weight: 700;
       color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .rzp-agent-title-wrap span {
-      font-size: 11px;
+      font-size: 10.5px;
       color: #38bdf8;
       display: flex;
       align-items: center;
       gap: 4px;
+      font-weight: 500;
     }
     .rzp-agent-header-actions {
       display: flex;
@@ -233,7 +258,7 @@
     }
     .rzp-agent-btn-icon {
       background: rgba(255, 255, 255, 0.12);
-      border: none;
+      border: 1px solid rgba(255, 255, 255, 0.15);
       color: #ffffff;
       width: 30px;
       height: 30px;
@@ -242,10 +267,32 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s;
+      transition: all 0.2s;
+      font-size: 13px;
     }
     .rzp-agent-btn-icon:hover {
       background: rgba(255, 255, 255, 0.25);
+      transform: scale(1.05);
+    }
+
+    /* Trust & Security Verification Bar */
+    .rzp-agent-trust-strip {
+      background: #071526;
+      padding: 4px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: #94a3b8;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+    .rzp-trust-badge-green {
+      color: #34d399;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     /* User Profile Bar */
@@ -267,31 +314,38 @@
       text-overflow: ellipsis;
     }
     .rzp-switch-btn {
-      border: none;
-      background: #0284c7;
-      color: #ffffff;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #0284c7;
       border-radius: 6px;
       padding: 3px 8px;
       font-size: 10px;
       font-weight: 700;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s;
     }
     .rzp-switch-btn:hover {
-      background: #0369a1;
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
     }
 
-    /* Auth Banner */
+    /* Active Payment & Pre-Auth Banner */
     .rzp-agent-auth-banner {
-      background: #eff6ff;
+      background: linear-gradient(90deg, #eff6ff 0%, #f0fdf4 100%);
       border-bottom: 1px solid #dbeafe;
-      padding: 6px 14px;
+      padding: 8px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       font-size: 11px;
       color: #1e40af;
       font-weight: 600;
+    }
+    .rzp-auth-banner-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     /* Chat Body */
@@ -312,8 +366,17 @@
       padding: 12px;
     }
     .rzp-agent-empty-icon {
-      font-size: 32px;
-      margin-bottom: 8px;
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 10px;
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #ffffff;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 8px 16px -4px rgba(2, 132, 199, 0.4);
     }
     .rzp-agent-empty-title {
       font-size: 15px;
@@ -336,7 +399,7 @@
       background: #f8fafc;
       border: 1px solid #e2e8f0;
       border-radius: 10px;
-      padding: 8px 12px;
+      padding: 9px 12px;
       font-size: 12px;
       color: #334155;
       text-align: left;
@@ -347,7 +410,7 @@
       transition: all 0.2s;
     }
     .rzp-agent-chip:hover {
-      background: #f1f5f9;
+      background: #f0f9ff;
       border-color: #0284c7;
       color: #0284c7;
       transform: translateX(2px);
@@ -373,12 +436,13 @@
       white-space: pre-wrap;
     }
     .rzp-agent-msg.user .rzp-agent-msg-bubble {
-      background: #0284c7;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
       color: #ffffff;
       border-bottom-right-radius: 4px;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);
     }
     .rzp-agent-msg.agent .rzp-agent-msg-bubble {
-      background: #f1f5f9;
+      background: #f8fafc;
       color: #1e293b;
       border-bottom-left-radius: 4px;
       border: 1px solid #e2e8f0;
@@ -389,7 +453,7 @@
       background: #f8fafc;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
-      padding: 10px 12px;
+      padding: 12px;
       font-size: 12px;
       display: flex;
       flex-direction: column;
@@ -409,7 +473,7 @@
     .rzp-agent-step {
       display: flex;
       align-items: flex-start;
-      gap: 6px;
+      gap: 8px;
       color: #334155;
       line-height: 1.4;
     }
@@ -418,16 +482,18 @@
       margin-top: 1px;
     }
 
-    /* Confirmed Order Card */
+    /* Confirmed Order Card - High-Trust Fintech Receipt */
     .rzp-agent-order-card {
-      background: #ecfdf5;
-      border: 1px solid #a7f3d0;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-top: 3px solid #059669;
       border-radius: 12px;
-      padding: 12px;
+      padding: 14px;
       font-size: 12px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
     .rzp-agent-order-header {
       display: flex;
@@ -435,14 +501,14 @@
       align-items: center;
       font-weight: 700;
       color: #065f46;
-      font-size: 13px;
-      padding-bottom: 4px;
-      border-bottom: 1px dashed #6ee7b7;
+      font-size: 13.5px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed #cbd5e1;
     }
     .rzp-agent-order-details {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 4px;
       color: #1f2937;
     }
 
@@ -462,29 +528,32 @@
       border-radius: 10px;
       font-size: 13px;
       outline: none;
-      transition: border-color 0.2s;
+      transition: all 0.2s;
     }
     .rzp-agent-input:focus {
       border-color: #0284c7;
       box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
     }
     .rzp-agent-send-btn {
-      padding: 10px 16px;
-      background: #0284c7;
+      padding: 10px 18px;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
       color: #ffffff;
       border: none;
       border-radius: 10px;
       font-weight: 700;
       font-size: 13px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.3);
     }
     .rzp-agent-send-btn:hover {
-      background: #0369a1;
+      background: #0284c7;
+      transform: translateY(-1px);
     }
     .rzp-agent-send-btn:disabled {
       background: #94a3b8;
       cursor: not-allowed;
+      box-shadow: none;
     }
 
     /* Modals */
@@ -501,6 +570,7 @@
       padding: 18px;
       transform: translateY(100%);
       transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
     }
     .rzp-agent-modal.open {
       transform: translateY(0);
@@ -519,6 +589,91 @@
       font-weight: 700;
       color: #0f172a;
     }
+
+    /* Segmented Tab Controls in Settings */
+    .rzp-segmented-tabs {
+      display: flex;
+      background: #f1f5f9;
+      border-radius: 8px;
+      padding: 3px;
+      margin-bottom: 12px;
+      gap: 3px;
+    }
+    .rzp-tab-btn {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .rzp-tab-btn.active {
+      background: #ffffff;
+      color: #0284c7;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    }
+
+    /* Payment Instrument Option Card */
+    .rzp-payment-option-card {
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .rzp-payment-option-card:hover {
+      border-color: #93c5fd;
+      background: #f0f9ff;
+    }
+    .rzp-payment-option-card.selected {
+      border-color: #0284c7;
+      background: #f0f9ff;
+      box-shadow: 0 0 0 1px #0284c7;
+    }
+    .rzp-pm-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .rzp-pm-icon {
+      width: 32px;
+      height: 32px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .rzp-pm-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .rzp-pm-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #0f172a;
+    }
+    .rzp-pm-sub {
+      font-size: 10.5px;
+      color: #64748b;
+    }
+    .rzp-pm-radio {
+      width: 16px;
+      height: 16px;
+      accent-color: #0284c7;
+    }
+
     .rzp-agent-form-group {
       display: flex;
       flex-direction: column;
@@ -553,29 +708,41 @@
         </svg>
       </div>
       <div class="rzp-agent-trigger-text">
-        <div class="rzp-agent-trigger-title">Razorpay Agentic Pay</div>
+        <div class="rzp-agent-trigger-title">
+          <span>Razorpay Agentic Pay</span>
+          <span style="font-size:10px; background:#0284c7; padding:1px 5px; border-radius:4px;">AUTO</span>
+        </div>
         <div class="rzp-agent-trigger-sub">Pre-Authorized AI Buying</div>
       </div>
     </div>
 
     <!-- Copilot Drawer -->
     <div class="rzp-agent-drawer" id="rzp-agent-drawer">
-      <!-- Header -->
+      <!-- Enterprise Header -->
       <div class="rzp-agent-header">
         <div class="rzp-agent-header-brand">
           <div class="rzp-agent-badge-icon">R</div>
           <div class="rzp-agent-title-wrap">
-            <h3>Razorpay AI Shopping Agent</h3>
-            <span>Autonomous 0-Click Ready</span>
+            <h3>
+              <span>Razorpay AI Shopping Agent</span>
+              <span style="font-size:10px; background:#0284c7; padding:1px 5px; border-radius:4px; font-weight:700;">PRO</span>
+            </h3>
+            <span>⚡ Institutional Zero-Click Checkout Ready</span>
           </div>
         </div>
         <div class="rzp-agent-header-actions">
-          <button class="rzp-agent-btn-icon" id="rzp-agent-settings-btn" title="Settings">⚙️</button>
+          <button class="rzp-agent-btn-icon" id="rzp-agent-settings-btn" title="Payment & Authorization Settings">⚙️</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-close-btn" title="Close">✕</button>
         </div>
       </div>
 
-      <!-- User Profile & Memory Bar -->
+      <!-- Trust & Security Strip -->
+      <div class="rzp-agent-trust-strip">
+        <span class="rzp-trust-badge-green">🔒 256-Bit Tokenized Auto-Debit</span>
+        <span>Razorpay Verified Gateway ✓</span>
+      </div>
+
+      <!-- User Profile & Delivery Memory Bar -->
       <div class="rzp-agent-profile-bar" id="rzp-agent-profile-bar">
         <div class="rzp-profile-info">
           <span style="font-weight:700; color:#0f172a;" id="rzp-profile-name">👤 ${currentUser.name}</span>
@@ -583,22 +750,24 @@
           <span style="color:#0284c7; font-weight:600;" id="rzp-profile-addr">📍 ${currentAddress.label}</span>
         </div>
         <button class="rzp-switch-btn" id="rzp-agent-switch-user-btn">
-          Login / Switch
+          Profile / Address
         </button>
       </div>
 
-      <!-- Auth Banner -->
+      <!-- Active Payment Method & Pre-Auth Banner -->
       <div class="rzp-agent-auth-banner">
-        <span>🛡️ Pre-Auth: <strong id="rzp-agent-banner-limit">₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}</strong></span>
-        <span>💳 <span id="rzp-agent-banner-card">${savedPayment.brand || 'Visa'} (•••• ${savedPayment.last4 || '1007'})</span></span>
+        <span class="rzp-auth-banner-item">🛡️ Pre-Auth: <strong id="rzp-agent-banner-limit">₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}</strong></span>
+        <span class="rzp-auth-banner-item" style="cursor:pointer;" id="rzp-agent-banner-card-btn" title="Change Payment Method">
+          💳 <span id="rzp-agent-banner-card" style="text-decoration:underline;">${savedPayment.label || 'Visa Debit (•••• 1007)'}</span>
+        </span>
       </div>
 
       <!-- Body / Chat -->
       <div class="rzp-agent-body" id="rzp-agent-chat-body">
         <div class="rzp-agent-empty" id="rzp-agent-empty-state">
           <div class="rzp-agent-empty-icon">⚡</div>
-          <div class="rzp-agent-empty-title">Instant AI Autonomous Shopping</div>
-          <div class="rzp-agent-empty-desc">Tell the AI agent what to buy on this store. It will evaluate products, verify budget pre-authorization, remember your address, and complete payment with 0 clicks.</div>
+          <div class="rzp-agent-empty-title">Instant Autonomous AI Shopping</div>
+          <div class="rzp-agent-empty-desc">Tell the AI agent what to buy. It will parse catalog availability, obey pre-auth limits, remember your address, and execute Razorpay payment with 0 clicks.</div>
           
           <div class="rzp-agent-chips">
             <button class="rzp-agent-chip" data-prompt="What was my last order?">
@@ -609,12 +778,12 @@
               <span>🍗 2 Chicken Biryani via BOB NetBanking</span>
               <span>→</span>
             </button>
-            <button class="rzp-agent-chip" data-prompt="Buy each item from Burger King of 2 quantity">
-              <span>🍔 Burger King (2x each) via Gemini AI</span>
+            <button class="rzp-agent-chip" data-prompt="Buy 1 Keychron mechanical keyboard and pay using amazon credit card">
+              <span>⌨️ Keychron Keyboard via Amazon Card</span>
               <span>→</span>
             </button>
-            <button class="rzp-agent-chip" data-prompt="Buy 1 Keychron mechanical keyboard and 1 wireless mouse under 6000">
-              <span>⌨️ Mechanical Keyboard & Mouse</span>
+            <button class="rzp-agent-chip" data-prompt="Buy each item from Burger King of 2 quantity and deliver to office">
+              <span>🍔 Burger King (2x each) to Office</span>
               <span>→</span>
             </button>
           </div>
@@ -627,14 +796,14 @@
           type="text" 
           class="rzp-agent-input" 
           id="rzp-agent-input" 
-          placeholder="e.g. Buy 2 chicken biryani or ask 'what was my last order?'..." 
+          placeholder="e.g. Buy 2 biryani and pay with BOB netbanking..." 
         />
         <button class="rzp-agent-send-btn" id="rzp-agent-send-btn">
           Buy
         </button>
       </div>
 
-      <!-- Login / Switch User Modal -->
+      <!-- User Profile & Delivery Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-user-modal">
         <div class="rzp-agent-modal-header">
           <h4>👤 User Profile & Delivery Memory</h4>
@@ -656,43 +825,55 @@
           </select>
         </div>
         <div style="background:#f1f5f9; padding:10px; border-radius:8px; margin:8px 0; font-size:11px; color:#475569;">
-          📧 <strong>Gmail Notifications</strong>: Order receipts & Razorpay payment confirmations will be sent to this email automatically.
+          📧 <strong>Gmail Confirmation</strong>: Order receipts & Razorpay payment confirmations will be dispatched to this email automatically.
         </div>
         <button class="rzp-agent-send-btn" id="rzp-user-save-btn" style="width:100%; margin-top:10px;">
-          Login / Update Active Profile
+          Save Profile & Login
         </button>
       </div>
 
-      <!-- Settings Panel -->
+      <!-- Multiple Payment Options & Pre-Auth Settings Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-settings-modal">
         <div class="rzp-agent-modal-header">
-          <h4>⚙️ Pre-Authorization Settings</h4>
+          <h4>💳 Payment Methods & Pre-Auth</h4>
           <button class="rzp-agent-btn-icon" id="rzp-agent-settings-close-btn" style="background:#e2e8f0; color:#0f172a;">✕</button>
         </div>
+
+        <!-- Segmented Category Tabs -->
+        <div class="rzp-segmented-tabs">
+          <button class="rzp-tab-btn active" id="rzp-tab-cards" data-tab="cards">💳 Cards</button>
+          <button class="rzp-tab-btn" id="rzp-tab-netbanking" data-tab="netbanking">🏦 NetBanking</button>
+          <button class="rzp-tab-btn" id="rzp-tab-upi" data-tab="upi">⚡ Instant UPI</button>
+        </div>
+
+        <div style="font-size:11px; color:#64748b; margin-bottom:8px; font-weight:600;">
+          SELECT DEFAULT PAYMENT METHOD:
+        </div>
+
+        <!-- Payment Options Container -->
+        <div id="rzp-payment-options-list" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto; margin-bottom:12px;">
+          <!-- Populated dynamically via JS -->
+        </div>
+
         <div class="rzp-agent-form-group">
-          <label>Pre-Authorized Spending Limit (₹)</label>
+          <label>Pre-Authorized Auto-Debit Limit (₹)</label>
           <input type="number" id="rzp-settings-limit" value="${savedPayment.autoDebitLimit || 15000}" />
         </div>
+
         <div class="rzp-agent-form-group">
-          <label>Saved Payment Card</label>
-          <select id="rzp-settings-card">
-            <option value="4100280000001007" selected>Visa (Domestic Test) •••• 1007</option>
-            <option value="4315280000004022">Amazon Pay ICICI •••• 4022</option>
-          </select>
-        </div>
-        <div class="rzp-agent-form-group">
-          <label>Cardholder Name</label>
-          <input type="text" id="rzp-settings-holder" value="${currentUser.name || 'Nawaz Khan'}" />
-        </div>
-        <div class="rzp-agent-form-group">
-          <label>Auto-Debit Mode</label>
+          <label>Auto-Debit Execution Mode</label>
           <select id="rzp-settings-autodebit">
-            <option value="true" selected>Enabled (0-Click Autonomous Payment)</option>
-            <option value="false">Disabled (Ask before payment)</option>
+            <option value="true" selected>Enabled (0-Click Autonomous Zero-Intervention Pay)</option>
+            <option value="false">Disabled (Ask confirmation before charging)</option>
           </select>
         </div>
-        <button class="rzp-agent-send-btn" id="rzp-settings-save-btn" style="width:100%; margin-top:10px;">
-          Save Pre-Authorization Limits
+
+        <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:8px 10px; font-size:11px; color:#065f46; margin-bottom:10px;">
+          ✓ <em>Prompt Override Enabled</em>: If you mention a specific card or bank in your prompt (e.g. "pay with bob netbanking"), the agent will automatically prioritize that option!
+        </div>
+
+        <button class="rzp-agent-send-btn" id="rzp-settings-save-btn" style="width:100%;">
+          Save Default Payment Instrument
         </button>
       </div>
     </div>
@@ -704,6 +885,7 @@
   const drawerEl = document.getElementById('rzp-agent-drawer');
   const closeBtn = document.getElementById('rzp-agent-close-btn');
   const settingsBtn = document.getElementById('rzp-agent-settings-btn');
+  const bannerCardBtn = document.getElementById('rzp-agent-banner-card-btn');
   const settingsModal = document.getElementById('rzp-agent-settings-modal');
   const settingsCloseBtn = document.getElementById('rzp-agent-settings-close-btn');
   const settingsSaveBtn = document.getElementById('rzp-settings-save-btn');
@@ -715,6 +897,7 @@
   const sendBtn = document.getElementById('rzp-agent-send-btn');
   const chatBody = document.getElementById('rzp-agent-chat-body');
   const emptyState = document.getElementById('rzp-agent-empty-state');
+  const paymentOptionsList = document.getElementById('rzp-payment-options-list');
 
   // Toggle Drawer
   function toggleDrawer(open) {
@@ -733,13 +916,129 @@
   closeBtn.addEventListener('click', () => toggleDrawer(false));
 
   // Toggle Settings
-  settingsBtn.addEventListener('click', () => settingsModal.classList.add('open'));
+  settingsBtn.addEventListener('click', () => {
+    renderPaymentOptionsInSettings();
+    settingsModal.classList.add('open');
+  });
+  if (bannerCardBtn) {
+    bannerCardBtn.addEventListener('click', () => {
+      renderPaymentOptionsInSettings();
+      settingsModal.classList.add('open');
+    });
+  }
   settingsCloseBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
 
   // Toggle User Login Modal
   switchUserBtn.addEventListener('click', () => userModal.classList.add('open'));
   userCloseBtn.addEventListener('click', () => userModal.classList.remove('open'));
 
+  // Segmented Tabs Handling
+  ['cards', 'netbanking', 'upi'].forEach(tab => {
+    const tabBtn = document.getElementById(`rzp-tab-${tab}`);
+    if (tabBtn) {
+      tabBtn.addEventListener('click', () => {
+        document.querySelectorAll('.rzp-tab-btn').forEach(b => b.classList.remove('active'));
+        tabBtn.classList.add('active');
+        activeTab = tab;
+        renderPaymentOptionsInSettings();
+      });
+    }
+  });
+
+  // Render Payment Options in Settings Modal
+  function renderPaymentOptionsInSettings() {
+    if (!paymentOptionsList) return;
+    const methods = allPaymentMethods.length > 0 ? allPaymentMethods : [
+      { id: 'pm_visa_1007', type: 'card', brand: 'Visa (Domestic)', last4: '1007', label: 'Visa Debit (•••• 1007)', autoDebitLimit: 15000, isDefault: true },
+      { id: 'pm_icici_4022', type: 'card', brand: 'Amazon Pay ICICI Card', last4: '4022', label: 'Amazon Pay ICICI (•••• 4022)', autoDebitLimit: 25000 },
+      { id: 'pm_hdfc_3003', type: 'card', brand: 'HDFC Millennia Card', last4: '3003', label: 'HDFC Millennia (•••• 3003)', autoDebitLimit: 20000 },
+      { id: 'pm_bob_nb', type: 'netbanking', bankName: 'Bank of Baroda', label: 'Bank of Baroda NetBanking', autoDebitLimit: 50000 },
+      { id: 'pm_hdfc_nb', type: 'netbanking', bankName: 'HDFC Bank', label: 'HDFC Bank NetBanking', autoDebitLimit: 50000 },
+      { id: 'pm_sbi_nb', type: 'netbanking', bankName: 'State Bank of India', label: 'SBI NetBanking', autoDebitLimit: 50000 },
+      { id: 'pm_upi_gpay', type: 'upi', vpa: 'nawaz@okhdfcbank', label: 'Google Pay UPI (nawaz@okhdfcbank)', autoDebitLimit: 25000 },
+      { id: 'pm_upi_phonepe', type: 'upi', vpa: 'nawaz@ybl', label: 'PhonePe UPI (nawaz@ybl)', autoDebitLimit: 25000 }
+    ];
+
+    const filtered = methods.filter(m => {
+      if (activeTab === 'cards') return m.type === 'card';
+      if (activeTab === 'netbanking') return m.type === 'netbanking';
+      if (activeTab === 'upi') return m.type === 'upi';
+      return true;
+    });
+
+    let html = '';
+    filtered.forEach(m => {
+      const isSel = (savedPayment.id === m.id) || (m.isDefault && !savedPayment.id);
+      let icon = '💳';
+      let sub = `Tokenized Card •••• ${m.last4 || '1007'}`;
+      if (m.type === 'netbanking') {
+        icon = '🏦';
+        sub = `Internet Banking • ${m.bankName || 'Instant'}`;
+      } else if (m.type === 'upi') {
+        icon = '⚡';
+        sub = `Instant VPA • ${m.vpa || 'Direct UPI'}`;
+      }
+
+      html += `
+        <div class="rzp-payment-option-card ${isSel ? 'selected' : ''}" data-pm-id="${m.id}">
+          <div class="rzp-pm-left">
+            <div class="rzp-pm-icon">${icon}</div>
+            <div class="rzp-pm-info">
+              <span class="rzp-pm-title">${escapeHtml(m.label || m.brand)}</span>
+              <span class="rzp-pm-sub">${escapeHtml(sub)}</span>
+            </div>
+          </div>
+          <input type="radio" name="rzp-pm-radio" class="rzp-pm-radio" ${isSel ? 'checked' : ''} value="${m.id}" />
+        </div>
+      `;
+    });
+
+    paymentOptionsList.innerHTML = html;
+
+    // Attach click listeners to cards
+    paymentOptionsList.querySelectorAll('.rzp-payment-option-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const pmId = card.getAttribute('data-pm-id');
+        const chosen = methods.find(m => m.id === pmId);
+        if (chosen) {
+          savedPayment = { ...savedPayment, ...chosen };
+          document.getElementById('rzp-settings-limit').value = chosen.autoDebitLimit || 15000;
+          renderPaymentOptionsInSettings();
+        }
+      });
+    });
+  }
+
+  // Save Settings & Default Payment Method
+  settingsSaveBtn.addEventListener('click', () => {
+    const limit = parseInt(document.getElementById('rzp-settings-limit').value, 10) || 15000;
+    const autodebit = document.getElementById('rzp-settings-autodebit').value === 'true';
+
+    savedPayment.autoDebitLimit = limit;
+    savedPayment.enabled = autodebit;
+
+    updateWidgetHeader();
+    settingsModal.classList.remove('open');
+
+    // Save to backend default selection
+    fetch(`${config.agentApi}/saved-payment-method`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: currentUser.email,
+        methodId: savedPayment.id,
+        autoDebitLimit: limit,
+        isDefault: true
+      })
+    }).catch(() => {});
+
+    appendMessage({
+      role: 'agent',
+      text: `✅ **Default Payment Method Updated!**\n\n- **Active Instrument**: ${savedPayment.label || savedPayment.brand}\n- **Auto-Debit Limit**: ₹${limit.toLocaleString()}\n- **Mode**: ${autodebit ? '0-Click Autonomous Pay' : 'Manual Confirmation'}\n\nAll future orders without an explicit payment clause will default to this instrument.`
+    });
+  });
+
+  // Save User Profile & Address
   userSaveBtn.addEventListener('click', () => {
     const email = document.getElementById('rzp-user-email-input').value.trim() || 'nawaz@gmail.com';
     const name = document.getElementById('rzp-user-name-input').value.trim() || 'Nawaz Khan';
@@ -747,15 +1046,13 @@
 
     currentUser.email = email;
     currentUser.name = name;
-    currentUser.holder = name;
 
     if (addrChoice === 'office') {
-      currentAddress = { label: 'Office', street: 'WeWork Galaxy, 43 Residency Road', area: 'Shanthala Nagar', city: 'Bengaluru', pincode: '560025' };
+      currentAddress = { id: 'addr_office', label: 'Office', recipientName: name, street: 'WeWork Galaxy, 43 Residency Road', area: 'Shanthala Nagar', city: 'Bengaluru', pincode: '560025' };
     } else {
-      currentAddress = { label: 'Home', street: 'Flat 402, Sunshine Heights, 12th Main', area: 'Koramangala 4th Block', city: 'Bengaluru', pincode: '560034' };
+      currentAddress = { id: 'addr_home', label: 'Home', recipientName: name, street: 'Flat 402, Sunshine Heights, 12th Main', area: 'Koramangala 4th Block', city: 'Bengaluru', pincode: '560034' };
     }
 
-    // Call backend login
     fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -765,6 +1062,7 @@
       .then(data => {
         if (data.success && data.user) {
           currentUser = { ...currentUser, ...data.user };
+          if (data.user.paymentMethods) allPaymentMethods = data.user.paymentMethods;
         }
         updateWidgetHeader();
         userModal.classList.remove('open');
@@ -776,26 +1074,6 @@
       });
   });
 
-  settingsSaveBtn.addEventListener('click', () => {
-    const limit = parseInt(document.getElementById('rzp-settings-limit').value, 10) || 15000;
-    const holder = document.getElementById('rzp-settings-holder').value || currentUser.name;
-    const autodebit = document.getElementById('rzp-settings-autodebit').value === 'true';
-
-    savedPayment.autoDebitLimit = limit;
-    savedPayment.holder = holder;
-    savedPayment.enabled = autodebit;
-
-    updateWidgetHeader();
-    settingsModal.classList.remove('open');
-
-    // Save to backend
-    fetch(`${config.agentApi}/saved-payment-method`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...savedPayment, email: currentUser.email })
-    }).catch(() => {});
-  });
-
   function updateWidgetHeader() {
     const limitEl = document.getElementById('rzp-agent-banner-limit');
     const cardEl = document.getElementById('rzp-agent-banner-card');
@@ -804,7 +1082,7 @@
     const profileAddrEl = document.getElementById('rzp-profile-addr');
 
     if (limitEl) limitEl.textContent = `₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}`;
-    if (cardEl) cardEl.textContent = `${savedPayment.brand || 'Visa'} (•••• ${savedPayment.last4 || '1007'})`;
+    if (cardEl) cardEl.textContent = savedPayment.label || `${savedPayment.brand || 'Visa'} (•••• ${savedPayment.last4 || '1007'})`;
     if (profileNameEl) profileNameEl.textContent = `👤 ${currentUser.name || 'Nawaz Khan'}`;
     if (profileEmailEl) profileEmailEl.textContent = `(${currentUser.email || 'nawaz@gmail.com'})`;
     if (profileAddrEl) profileAddrEl.textContent = `📍 ${currentAddress.label || 'Home'}`;
@@ -873,6 +1151,7 @@
           razorpayOrderId: data.order?.razorpayOrderId || data.paymentData?.razorpayOrderId,
           razorpayPaymentId: data.verification?.paymentId || 'pay_live_captured',
           deliveryAddress: data.order?.deliveryAddress || currentAddress,
+          paymentMethod: data.order?.paymentMethod || savedPayment,
           userEmail: currentUser.email
         });
       } else if (data.reply) {
@@ -908,7 +1187,7 @@
     cardEl.id = id;
     cardEl.innerHTML = `
       <div class="rzp-agent-reasoning-title">
-        <span>⚡ Agent Decision & Execution Stream</span>
+        <span>⚡ Razorpay Autonomous Execution Stream</span>
       </div>
       <div class="rzp-agent-step">
         <span class="rzp-agent-step-icon">⏳</span>
@@ -923,7 +1202,7 @@
     const cardEl = document.getElementById(cardId);
     if (!cardEl) return;
 
-    let stepsHtml = `<div class="rzp-agent-reasoning-title"><span>⚡ Agent Decision & Execution Stream</span></div>`;
+    let stepsHtml = `<div class="rzp-agent-reasoning-title"><span>⚡ Razorpay Autonomous Execution Stream</span></div>`;
     steps.forEach(s => {
       const icon = s.status === 'completed' ? '✓' : (s.status === 'failed' || s.status === 'denied' ? '⚠️' : '⏳');
       const color = s.status === 'completed' ? '#059669' : (s.status === 'denied' ? '#dc2626' : '#2563eb');
@@ -938,35 +1217,39 @@
     chatBody.scrollTop = chatBody.scrollHeight;
   }
 
-  function appendConfirmedOrderCard({ productTitle, items = [], amount, orderId, razorpayOrderId, razorpayPaymentId, deliveryAddress, userEmail }) {
+  function appendConfirmedOrderCard({ productTitle, items = [], amount, orderId, razorpayOrderId, razorpayPaymentId, deliveryAddress, paymentMethod, userEmail }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'rzp-agent-order-card';
     
     let itemsHtml = '';
     if (items && items.length > 0) {
       itemsHtml = `
-        <div style="margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 6px; font-size: 11px;">
-          ${items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span><strong>${i.quantity || 1}x</strong> ${escapeHtml(i.title || i.productTitle)}</span><span style="color:#0f172a; font-weight:600;">₹${(i.lineTotal || (i.price * (i.quantity || 1)) || 0).toLocaleString()}</span></div>`).join('')}
+        <div style="margin: 6px 0; padding: 6px 8px; background: #f8fafc; border-radius: 6px; font-size: 11px; border: 1px solid #e2e8f0;">
+          ${items.map(i => `<div style="display:flex; justify-content:space-between; margin-bottom:2px;"><span><strong>${i.quantity || 1}x</strong> ${escapeHtml(i.title || i.productTitle)}</span><span style="color:#0f172a; font-weight:700;">₹${(i.lineTotal || (i.price * (i.quantity || 1)) || 0).toLocaleString()}</span></div>`).join('')}
         </div>
       `;
     }
 
     const addrStr = deliveryAddress ? `${deliveryAddress.label || 'Home'} - ${deliveryAddress.street || ''}, ${deliveryAddress.city || 'Bengaluru'}` : 'Home (Bengaluru)';
+    const payLabel = paymentMethod?.label || paymentMethod?.brand || 'Visa Debit (•••• 1007)';
 
     cardEl.innerHTML = `
       <div class="rzp-agent-order-header">
-        <span>🎉 Order Autonomously Placed & Captured!</span>
-        <span>₹${amount.toLocaleString()}</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span>🎉</span> <span>Order Placed & Captured!</span>
+        </span>
+        <span style="color:#0f172a; font-size:15px;">₹${amount.toLocaleString()}</span>
       </div>
       <div class="rzp-agent-order-details">
         <div><strong>Item(s):</strong> ${escapeHtml(productTitle)}</div>
         ${itemsHtml}
-        <div><strong>📍 Delivery Address:</strong> ${escapeHtml(addrStr)}</div>
-        <div><strong>🆔 Store Order:</strong> <code>#${orderId || 'ORD-NEW'}</code></div>
-        <div><strong>⚡ Razorpay Order:</strong> <code>${razorpayOrderId || 'order_xxx'}</code></div>
+        <div><strong>📍 Delivery Destination:</strong> ${escapeHtml(addrStr)}</div>
+        <div><strong>💳 Payment Instrument:</strong> <span style="color:#0369a1; font-weight:600;">${escapeHtml(payLabel)}</span></div>
+        <div><strong>🆔 Store Order ID:</strong> <code>#${orderId || 'ORD-NEW'}</code></div>
+        <div><strong>⚡ Razorpay Order ID:</strong> <code>${razorpayOrderId || 'order_xxx'}</code></div>
         <div><strong>🔒 Razorpay Payment ID:</strong> <code style="color:#0284c7; font-weight:bold;">${razorpayPaymentId}</code> (Captured ✓)</div>
         <div style="color:#2563eb; font-weight:600; margin-top:2px;">📧 Confirmation Receipt dispatched to: <strong>${escapeHtml(userEmail || 'nawaz@gmail.com')}</strong> ✓</div>
-        <div style="color:#059669; font-weight:600; margin-top:2px;">✓ 0 Human Intervention Auto-Debit Verified</div>
+        <div style="color:#059669; font-weight:700; margin-top:3px;">🛡️ 0 Human Intervention Auto-Debit Verified</div>
       </div>
     `;
     chatBody.appendChild(cardEl);
@@ -1004,5 +1287,5 @@
     }
   };
 
-  console.log('[Razorpay Agentic Pay] Embedded SDK with User Auth & Memory Initialized.');
+  console.log('[Razorpay Agentic Pay] Enterprise Fintech SDK with Multi-Payment Options Initialized.');
 })();

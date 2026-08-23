@@ -87,23 +87,49 @@ app.get('/api/user/emails', (req, res) => {
 
 // ==================== SPECIFICATION: BUYER AGENT ROUTES ====================
 
-// GET /api/agent/saved-payment-method - Get user pre-saved payment method
+// GET /api/agent/saved-payment-method - Get user pre-saved payment methods
 app.get('/api/agent/saved-payment-method', (req, res) => {
   const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const user = userStore.getUser(email);
   const paymentMethod = userStore.getDefaultPaymentMethod(email);
-  res.json({ success: true, paymentMethod });
+  res.json({
+    success: true,
+    paymentMethod,
+    paymentMethods: user.paymentMethods || []
+  });
 });
 
-// POST /api/agent/saved-payment-method - Update user pre-saved payment method
+// POST /api/agent/saved-payment-method - Update user pre-saved payment method & default selection
 app.post('/api/agent/saved-payment-method', (req, res) => {
   const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const user = userStore.getUser(email);
-  const { autoDebitLimit } = req.body;
-  if (autoDebitLimit && user.paymentMethods[0]) {
-    user.paymentMethods[0].autoDebitLimit = Number(autoDebitLimit);
-    userStore.saveMemory();
+  const { methodId, autoDebitLimit, holder, isDefault } = req.body;
+  
+  if (methodId && (isDefault || isDefault === undefined)) {
+    userStore.setDefaultPaymentMethod(email, methodId);
   }
-  res.json({ success: true, paymentMethod: user.paymentMethods[0], message: 'Saved payment details updated successfully.' });
+  
+  const updatedMethod = userStore.updatePaymentMethod(email, methodId, { autoDebitLimit, holder, isDefault });
+  const defaultMethod = userStore.getDefaultPaymentMethod(email);
+  const user = userStore.getUser(email);
+
+  res.json({
+    success: true,
+    paymentMethod: defaultMethod,
+    paymentMethods: user.paymentMethods,
+    message: `Default payment method updated to ${defaultMethod.label || defaultMethod.brand}`
+  });
+});
+
+// POST /api/user/payment-method/default - Explicitly set default payment method
+app.post('/api/user/payment-method/default', (req, res) => {
+  const { methodId } = req.body;
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const defaultMethod = userStore.setDefaultPaymentMethod(email, methodId);
+  res.json({
+    success: true,
+    paymentMethod: defaultMethod,
+    message: `Default payment method set to ${defaultMethod.label || defaultMethod.brand}`
+  });
 });
 
 // POST /api/agent/purchase - Main Natural-Language Purchase Endpoint (Spec Section 5)
