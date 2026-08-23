@@ -363,15 +363,18 @@ const executeTool = async (name, args, sessionContext = {}) => {
           form.append('amount', (order.amount || 499) * 100);
           form.append('currency', order.currency || 'INR');
           form.append('order_id', razorpayOrderId);
-          form.append('email', order.customerEmail || 'student@example.com');
-          form.append('contact', '9876512345');
+          form.append('email', order.customerEmail || 'shahnawajnilger244@gmail.com');
+          form.append('contact', '9876543210');
 
-          if (activeMethod.method === 'netbanking') {
+          const isNetBanking = activeMethod.method === 'netbanking' || activeMethod.type === 'netbanking';
+          const isUpi = activeMethod.method === 'upi' || activeMethod.type === 'upi';
+
+          if (isNetBanking) {
             form.append('method', 'netbanking');
             form.append('bank', activeMethod.bank || 'BARB_R');
-          } else if (activeMethod.method === 'upi') {
+          } else if (isUpi) {
             form.append('method', 'upi');
-            form.append('vpa', activeMethod.vpa || 'success@razorpay');
+            form.append('vpa', 'success@razorpay');
           } else {
             // Card payment
             form.append('method', 'card');
@@ -380,7 +383,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
             form.append('card[expiry_month]', expMonth);
             form.append('card[expiry_year]', expYear.length === 2 ? `20${expYear}` : expYear);
             form.append('card[cvv]', '123');
-            form.append('card[name]', activeMethod.holder || order.customerName || 'Student Buyer');
+            form.append('card[name]', activeMethod.holder || order.customerName || 'Nawaz Khan');
           }
 
           const rzpResponse = await fetch('https://api.razorpay.com/v1/payments/create/ajax', {
@@ -392,8 +395,10 @@ const executeTool = async (name, args, sessionContext = {}) => {
           if (rzpResult.error) {
             console.error('RAZORPAY PAYMENT CREATION ERROR:', JSON.stringify(rzpResult.error, null, 2));
           }
-          if (rzpResult.payment_id || rzpResult.id) {
-            paymentId = rzpResult.payment_id || rzpResult.id;
+
+          const rawPaymentId = rzpResult.payment_id || rzpResult.id || rzpResult.request?.content?.payment_id;
+          if (rawPaymentId) {
+            paymentId = rawPaymentId.startsWith('pay_') ? rawPaymentId : ('pay_' + rawPaymentId);
 
             // Complete automated 3DS bank authorization / Mocksharp approval
             if (rzpResult.request?.url) {
@@ -481,7 +486,6 @@ const executeTool = async (name, args, sessionContext = {}) => {
           }
         } catch (rzpErr) {
           console.warn('Direct Razorpay payment API call fallback:', rzpErr.message);
-          paymentId = paymentId || `pay_${Math.random().toString(36).substring(2, 16)}`;
         }
       }
 

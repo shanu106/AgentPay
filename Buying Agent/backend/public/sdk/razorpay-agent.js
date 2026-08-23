@@ -1,6 +1,7 @@
 /**
  * Razorpay Agentic Commerce SDK (Embeddable Widget)
  * Institutional-Grade Autonomous AI Buying & Pre-Authorized Auto-Debit Engine
+ * Dynamic Merchant Niche-Aware Suggestions & Multi-Payment Wallet
  * 
  * Usage:
  * <script 
@@ -769,23 +770,8 @@
           <div class="rzp-agent-empty-title">Instant Autonomous AI Shopping</div>
           <div class="rzp-agent-empty-desc">Tell the AI agent what to buy. It will parse catalog availability, obey pre-auth limits, remember your address, and execute Razorpay payment with 0 clicks.</div>
           
-          <div class="rzp-agent-chips">
-            <button class="rzp-agent-chip" data-prompt="What was my last order?">
-              <span>📋 What was my last order? (Memory Recall)</span>
-              <span>→</span>
-            </button>
-            <button class="rzp-agent-chip" data-prompt="Order 2 chicken biryani under 1000 and pay using net banking of bob">
-              <span>🍗 2 Chicken Biryani via BOB NetBanking</span>
-              <span>→</span>
-            </button>
-            <button class="rzp-agent-chip" data-prompt="Buy 1 Keychron mechanical keyboard and pay using amazon credit card">
-              <span>⌨️ Keychron Keyboard via Amazon Card</span>
-              <span>→</span>
-            </button>
-            <button class="rzp-agent-chip" data-prompt="Buy each item from Burger King of 2 quantity and deliver to office">
-              <span>🍔 Burger King (2x each) to Office</span>
-              <span>→</span>
-            </button>
+          <div class="rzp-agent-chips" id="rzp-agent-suggestion-chips">
+            <!-- Populated dynamically based on merchant niche -->
           </div>
         </div>
       </div>
@@ -796,7 +782,7 @@
           type="text" 
           class="rzp-agent-input" 
           id="rzp-agent-input" 
-          placeholder="e.g. Buy 2 biryani and pay with BOB netbanking..." 
+          placeholder="Ask a question or tell the agent what to buy..." 
         />
         <button class="rzp-agent-send-btn" id="rzp-agent-send-btn">
           Buy
@@ -898,6 +884,7 @@
   const chatBody = document.getElementById('rzp-agent-chat-body');
   const emptyState = document.getElementById('rzp-agent-empty-state');
   const paymentOptionsList = document.getElementById('rzp-payment-options-list');
+  const suggestionChipsContainer = document.getElementById('rzp-agent-suggestion-chips');
 
   // Toggle Drawer
   function toggleDrawer(open) {
@@ -1088,16 +1075,129 @@
     if (profileAddrEl) profileAddrEl.textContent = `📍 ${currentAddress.label || 'Home'}`;
   }
 
-  // Quick Chips Click
-  document.querySelectorAll('.rzp-agent-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const prompt = chip.getAttribute('data-prompt');
-      if (prompt) {
-        inputEl.value = prompt;
-        handleSend();
-      }
+  // Dynamic Merchant Niche Suggestions Loader
+  function fetchMerchantProductsAndRenderNicheChips() {
+    const chipsContainer = document.getElementById('rzp-agent-suggestion-chips');
+    const inputField = document.getElementById('rzp-agent-input');
+    if (!chipsContainer) return;
+
+    fetch(`${config.merchantApi}/products`)
+      .then(r => r.json())
+      .then(data => {
+        const prods = data.products || data || [];
+        if (Array.isArray(prods) && prods.length > 0) {
+          // Detect Niche from merchant products
+          const isFood = prods.some(p => p.restaurantName || (p.category && /food|biryani|pizza|burger|dessert|snack/i.test(p.category)));
+          const isTech = prods.some(p => p.brand || (p.category && /hardware|electronics|accessories|audio|gear|keyboard|charger/i.test(p.category)));
+          const isCourse = prods.some(p => p.instructor || (p.category && /course|education|tech|programming/i.test(p.category)));
+
+          let chips = [];
+          // Standard memory recall chip
+          chips.push({
+            icon: '📋',
+            label: 'What was my last order? (Memory Recall)',
+            prompt: 'What was my last order?'
+          });
+
+          if (isFood) {
+            if (inputField) inputField.placeholder = "e.g. Buy 2 chicken biryani or ask 'what restaurants do you have?'...";
+            chips.push({
+              icon: '🍗',
+              label: '2 Chicken Biryani under ₹1,000 via BOB NetBanking',
+              prompt: 'Order 2 chicken biryani under 1000 and pay using net banking of bob'
+            });
+            chips.push({
+              icon: '🍕',
+              label: 'Buy 2 Cheesy-7 Pizza and 1 Farm Villa Pizza',
+              prompt: 'Buy 2 Cheesy-7 Pizza and 1 Farm Villa Veg Special Pizza'
+            });
+            chips.push({
+              icon: '🍔',
+              label: 'Buy 2 Crispy Chicken Whopper Meals to Office',
+              prompt: 'Buy 2 Crispy Chicken Whopper Meals and deliver to office'
+            });
+          } else if (isTech) {
+            if (inputField) inputField.placeholder = "e.g. Buy Keychron keyboard or ask 'is there any GaN charger?'...";
+            chips.push({
+              icon: '⌨️',
+              label: 'Buy Keychron Wireless Mechanical Keyboard',
+              prompt: 'Buy 1 Keychron K2 Wireless Mechanical Keyboard and pay using amazon credit card'
+            });
+            chips.push({
+              icon: '⚡',
+              label: 'Is there any 100W GaN Fast Charger in stock?',
+              prompt: 'is there any GaN charger available'
+            });
+            chips.push({
+              icon: '🎧',
+              label: 'Buy 1 Sony WH-1000XM5 Wireless Headphones',
+              prompt: 'Buy 1 Sony WH-1000XM5 Wireless Noise Cancelling Headphones'
+            });
+          } else if (isCourse) {
+            if (inputField) inputField.placeholder = "e.g. Buy JavaScript mastery course under 500...";
+            chips.push({
+              icon: '⚡',
+              label: 'Buy JavaScript Mastery Course under ₹500',
+              prompt: 'Buy me a JavaScript mastery course of price upto 500'
+            });
+            chips.push({
+              icon: '🐍',
+              label: 'Buy Python for Data Science under ₹1,000',
+              prompt: 'Buy me a Python Data Science course under 1000'
+            });
+            chips.push({
+              icon: '⭐',
+              label: 'Buy Full Stack Web Dev Course via BOB NetBanking',
+              prompt: 'Buy Full Stack Web Dev Mastery course and pay using net banking of bob'
+            });
+          } else {
+            // General dynamic merchant product chips from live catalog
+            const p1 = prods[0];
+            const p2 = prods[1] || prods[0];
+            const p3 = prods[2] || prods[0];
+            if (p1) chips.push({ icon: '🛍️', label: `Buy 1 ${p1.title} (₹${p1.price})`, prompt: `Buy 1 ${p1.title}` });
+            if (p2 && p2.id !== p1.id) chips.push({ icon: '✨', label: `Buy 1 ${p2.title} (₹${p2.price})`, prompt: `Buy 1 ${p2.title}` });
+            if (p3 && p3.id !== p2.id && p3.id !== p1.id) chips.push({ icon: '🔍', label: `Check availability of ${p3.title}`, prompt: `is ${p3.title} available?` });
+          }
+
+          renderChipsHtml(chipsContainer, chips);
+        }
+      })
+      .catch(() => {
+        const fallbackChips = [
+          { icon: '📋', label: 'What was my last order? (Memory Recall)', prompt: 'What was my last order?' },
+          { icon: '🛍️', label: 'What products do you have available?', prompt: 'What products and items do you have?' },
+          { icon: '💳', label: 'What payment methods do you accept?', prompt: 'What payment methods do you accept?' }
+        ];
+        renderChipsHtml(chipsContainer, fallbackChips);
+      });
+  }
+
+  function renderChipsHtml(container, chips) {
+    let html = '';
+    chips.forEach(c => {
+      html += `
+        <button class="rzp-agent-chip" data-prompt="${escapeHtml(c.prompt)}">
+          <span>${c.icon} ${escapeHtml(c.label)}</span>
+          <span>→</span>
+        </button>
+      `;
     });
-  });
+    container.innerHTML = html;
+
+    // Attach click listeners
+    container.querySelectorAll('.rzp-agent-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const prompt = chip.getAttribute('data-prompt');
+        if (prompt) {
+          inputEl.value = prompt;
+          handleSend();
+        }
+      });
+    });
+  }
+
+  fetchMerchantProductsAndRenderNicheChips();
 
   // Handle Send Purchase Prompt
   async function handleSend() {
@@ -1287,5 +1387,5 @@
     }
   };
 
-  console.log('[Razorpay Agentic Pay] Enterprise Fintech SDK with Multi-Payment Options Initialized.');
+  console.log('[Razorpay Agentic Pay] Enterprise Fintech SDK with Niche-Aware Suggestions Initialized.');
 })();

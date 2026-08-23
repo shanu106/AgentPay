@@ -67,6 +67,134 @@ const checkMemoryRecallQuery = (text, userEmail) => {
 };
 
 /**
+ * Helper: Classify and handle Greetings, Store Inquiries, Guardrails, and Meta Inquiries
+ */
+const handleConversationalAndGuardrailQueries = async (message, user, sessionContext, apiKey) => {
+  const text = message.toLowerCase().trim();
+  const hasBuyCommand = /\b(buy|order|purchase|bue|by|get me|deliver me|send me|add to cart|checkout|reorder)\b/i.test(text);
+
+  // 1. Meta / System Prompt / Restrictions Inquiry -> Guardrail
+  const isMetaInquiry = /\b(ignore (all )?previous instructions|system prompt|what are your (instructions|rules|restrictions|constraints|system prompts)|show (me )?your (prompt|code|instructions|rules)|jailbreak|developer mode|dan mode|internal prompt)\b/i.test(text);
+  if (isMetaInquiry) {
+    return {
+      handled: true,
+      reply: `I am the store's AI Shopping Assistant powered by **Razorpay Agentic Commerce**. I'm here to assist you with browsing our catalog, checking product availability, and placing orders securely with pre-authorized payments.`,
+      stepText: `🛡️ Security & Privacy Guardrail: Handled assistant inquiry safely`
+    };
+  }
+
+  // 2. Greeting Inquiry (when not explicitly asking to buy an item)
+  const isGreeting = /\b(hi|hello|hey|heya|yo|namaste|good\s+(morning|afternoon|evening)|howdy|sup|how are you|greetings|hi there|hello there)\b/i.test(text);
+  if (isGreeting && !hasBuyCommand) {
+    return {
+      handled: true,
+      reply: `👋 Hello **${user.name}**! I am your AI Shopping Assistant for this store powered by **Razorpay Agentic Commerce**.\n\nHere is what I can do for you:\n- 🛍️ **Browse Catalog**: Ask me *"what dishes/products do you have?"* or *"show me pizzas/burgers"*\n- ⚡ **Autonomous 0-Click Buying**: Tell me *"buy 2 chicken biryani under 1000"* and I will place the order and capture payment automatically\n- 💳 **Payment Methods**: Pay via Saved Cards, Bank of Baroda / HDFC NetBanking, or UPI\n- 📋 **Memory Recall**: Ask *"what was my last order?"* or *"show my spending"*\n\nHow can I help you today?`,
+      stepText: `💬 Conversational Greeting: Welcomed ${user.name}`
+    };
+  }
+
+  // 3. Store / Merchant Info & Product Availability Queries
+  const isCatalogOverviewQuery = /\b(what (restaurants|shops|brands|items|products|dishes|food|courses)|show (me )?(what (you|is)|the |available )?(menu|catalog|dishes|products|items|restaurants|courses|sell)|what (do you|can i|can you|you|is available to) (sell|offer|have|serve|buy|order)|what is in (the |your )?(store|catalog|menu|shop)|list (of )?(all )?(items|products|dishes|courses|restaurants|menu)|what are (the |your )?(dishes|items|products|bestsellers)|how (does (the )?agent|do you) work)\b/i.test(text);
+  const isPaymentQuery = /\b(payment (methods|options)|how (to|do i) pay|accepted cards|netbanking|upi (accepted|available))\b/i.test(text);
+  const isPriceQuery = /\b(price of|cost of|how much (is|for|does)|what is the price)\b/i.test(text);
+  const isAvailabilityQuery = /\b(is there|are there|available|availability|in stock|do you have|do you sell|can i find|search for|look for|find)\b/i.test(text);
+
+  if ((isCatalogOverviewQuery || isPaymentQuery || isPriceQuery || isAvailabilityQuery) && !hasBuyCommand) {
+    // Fetch live products from merchant catalog
+    const searchRes = await executeTool('searchProducts', { query: '' }, sessionContext);
+    const prods = searchRes.products || [];
+
+    if (isPaymentQuery) {
+      return {
+        handled: true,
+        reply: `💳 **Supported Payment Instruments & Auto-Debit Options**:\n\n- **💳 Pre-Saved Cards**: Visa Domestic, Amazon Pay ICICI, HDFC Millennia, RuPay Debit\n- **🏦 NetBanking**: Bank of Baroda (BOB), HDFC Bank, State Bank of India (SBI), ICICI Bank\n- **⚡ Instant UPI**: Google Pay, PhonePe, Paytm\n\nAll transactions are verified with **Razorpay Pre-Authorization** and 256-bit tokenization. You can switch your default payment method anytime in the ⚙️ Settings panel!`,
+        stepText: `ℹ️ Merchant Information: Provided supported Razorpay payment methods`
+      };
+    }
+
+    if (!isCatalogOverviewQuery && (isPriceQuery || isAvailabilityQuery)) {
+      // Extract target product search query
+      const cleaned = text
+        .replace(/^(?:is there (any )?|are there (any )?|do you have (any )?|check availability of |availability of |can i find |search for |find |what is the price of |how much is |how much for |cost of |price of |how much does )\s*/i, '')
+        .replace(/\s+(available|availability|in stock|in the store|cost|worth|\?)*$/gi, '')
+        .trim();
+
+      const matchedProds = prods.filter(p => {
+        const titleLower = (p.title || '').toLowerCase();
+        const descLower = (p.description || '').toLowerCase();
+        const brandLower = (p.brand || p.restaurantName || '').toLowerCase();
+        const words = cleaned.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        return titleLower.includes(cleaned) ||
+               descLower.includes(cleaned) ||
+               brandLower.includes(cleaned) ||
+               words.some(w => titleLower.includes(w) || descLower.includes(w) || brandLower.includes(w));
+      });
+
+      if (matchedProds.length > 0) {
+        const prodList = matchedProds.slice(0, 3).map(p => 
+          `- **${p.title}**: **₹${p.price.toLocaleString()}** *(⭐ ${p.rating || 4.5} ★ | ${p.available !== false ? 'In Stock ✓' : 'Out of Stock'})*${p.restaurantName || p.brand ? `\n  *Brand/Merchant: ${p.restaurantName || p.brand}*` : ''}${p.description ? `\n  *${p.description}*` : ''}`
+        ).join('\n\n');
+
+        return {
+          handled: true,
+          reply: `✅ **Yes! Available in Store**:\n\n${prodList}\n\n💡 *Would you like me to autonomously purchase any of these? Just say "buy 1 ${matchedProds[0].title}".*`,
+          stepText: `🔍 Availability Check: Found ${matchedProds.length} matching item(s) in catalog for "${cleaned}"`
+        };
+      } else if (cleaned.length > 2) {
+        return {
+          handled: true,
+          reply: `❌ **Not Found in Catalog**: We currently do not have **"${cleaned}"** in stock.\n\nYou can ask me *"show catalog"* or *"what items do you have?"* to explore our available menu and products!`,
+          stepText: `🔍 Availability Check: No products found in catalog for "${cleaned}"`
+        };
+      }
+    }
+
+    // Group products by restaurant, brand, or category
+    const isFoodNiche = prods.some(p => p.restaurantName || (p.category && /food|biryani|pizza|burger|snack/i.test(p.category)));
+    const isTechNiche = prods.some(p => p.brand || (p.category && /hardware|electronics|accessories|audio/i.test(p.category)));
+    const isCourseNiche = prods.some(p => p.instructor || (p.category && /course|education/i.test(p.category)));
+
+    const groupIcon = isFoodNiche ? '🍴' : (isTechNiche ? '💻' : (isCourseNiche ? '📚' : '🛍️'));
+    const storeNicheTitle = isFoodNiche ? 'Restaurant & Food Menu' : (isTechNiche ? 'Electronics & Gear Catalog' : (isCourseNiche ? 'Course Catalog' : 'Store Catalog'));
+
+    const groups = {};
+    prods.forEach(p => {
+      const gName = p.restaurantName || p.brand || p.category || (isCourseNiche ? 'Featured Courses' : 'Store Catalog');
+      if (!groups[gName]) groups[gName] = [];
+      groups[gName].push(p);
+    });
+
+    let menuList = '';
+    for (const [gName, items] of Object.entries(groups)) {
+      menuList += `### ${groupIcon} ${gName}:\n`;
+      items.slice(0, 4).forEach(item => {
+        menuList += `- **${item.title}**: ₹${item.price.toLocaleString()} *(⭐ ${item.rating || 4.5})*\n`;
+      });
+      menuList += '\n';
+    }
+
+    return {
+      handled: true,
+      reply: `📋 **Welcome to the ${storeNicheTitle}!** Here are popular items available for autonomous ordering:\n\n${menuList}\n💡 *To order, simply tell me what you'd like (e.g. "buy 1 ${prods[0]?.title || 'item'}").*`,
+      stepText: `📋 Catalog Overview: Displayed ${storeNicheTitle.toLowerCase()} with available items`
+    };
+  }
+
+  // 4. Out-of-Domain / Non-Merchant Query Guardrail
+  const isOutOfDomain = /\b(write (python|javascript|code|script|essay|poem)|solve (equation|math|\d+[\+\-\*\/])|who is (the )?(president|prime minister|ceo|founder|king)|what is (the capital|quantum|gravity|photosynthesis|speed of light)|tell me a joke|explain (relativity|calculus|physics)|how to hack|recipe for homemade)\b/i.test(text);
+
+  if (isOutOfDomain && !hasBuyCommand) {
+    return {
+      handled: true,
+      reply: `I am specifically designed as an AI Shopping Assistant for this store. I can help you discover products, check item prices, explore the menu, and place autonomous orders with Razorpay. \n\nHow can I assist you with your shopping today?`,
+      stepText: `🛡️ Out-of-Domain Guardrail: Redirected non-shopping query to store assistance`
+    };
+  }
+
+  return { handled: false };
+};
+
+/**
  * Helper: Extract structured multi-item intent from natural language prompt
  */
 const extractPurchaseIntent = (message, defaultLimit = 15000) => {
@@ -86,11 +214,12 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   // 2. Clean conversational commentary & payment clauses
   let cleaned = text
     .replace(/^(?:i\s+want\s+to\s+|can\s+you\s+|pls\s+|please\s+|plz\s+|help\s+me\s+)?(?:buy|bue|by|bay|order|purchase|get|want|find|give|deliver|send)\s+(?:me\s+)?(?:a\s+|an\s+|to\s+)?/gi, '')
-    .replace(/\s+(and\s+)?(pay|paying|paid)\s+(using|with|via|by)\s+.*$/gi, '')
-    .replace(/\s+(and\s+)?using\s+(visa|mastercard|card|credit card|debit card|bob|sbi|hdfc|icici|upi|netbanking|net banking).*$/gi, '')
+    // Strip payment clauses: "and make payment using ...", "and pay using ...", "using bank of baroda ...", etc.
+    .replace(/\s+(and\s+)?(make\s+)?(payment|pay|paying|paid)\s+(using|with|via|by|through|of|on)\s+.*$/gi, '')
+    .replace(/\s+(and\s+)?(using|with|via|through|by)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
+    .replace(/\s+(and\s+)?(deliver|deliver\s+to|send\s+to|address)\s+(to\s+)?(home|office|work|bangalore|bengaluru|flat|house).*$/gi, '')
     .replace(/\s+(for the prompt|then total|multiple product|when user|fix the issue|total should be|asking for|but receipt got|order autonomously).*$/gi, '')
     .replace(/\s+(of\s+price|at\s+price|price|budget|worth|under|below|up to|upto|for)\s*(?:₹|rs\.?|inr)?\s*[\d,]+.*$/gi, '')
-    .replace(/\b(course|product|item|food|please|thanks|thank you|now)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -147,8 +276,19 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     };
   }
 
-  // Preserve model identifiers with numbers (e.g. cheesy-7 -> cheesy_7 or cheesy 7 -> cheesy_7)
-  const sanitized = cleaned.replace(/\b(cheesy|iphone|galaxy|ps|pixel|windows|i3|i5|i7|i9)\s*[-_ ]\s*(\d+)\b/gi, '$1_$2');
+  // Preserve compound product titles containing 'and' or '&' so they don't get split into multiple items
+  let sanitized = cleaned
+    .replace(/\b(ai|artificial\s+intelligence)\s+(and|&)\s+(machine\s+learning|ml)\b/gi, 'ai_and_machine_learning')
+    .replace(/\b(machine\s+learning|ml)\s+(and|&)\s+(ai|artificial\s+intelligence)\b/gi, 'machine_learning_and_ai')
+    .replace(/\b(data\s+science)\s+(and|&)\s+(ai|machine\s+learning|python)\b/gi, 'data_science_and_$3')
+    .replace(/\b(full\s+stack)\s+(and|&)\s+(web\s+dev|development)\b/gi, 'full_stack_and_web_dev')
+    .replace(/\b(react)\s+(and|&)\s+(next\.?js|modern\s+web)\b/gi, 'react_and_modern_web')
+    .replace(/\b(sweets?)\s+(and|&)\s+(snacks?)\b/gi, 'sweets_and_snacks')
+    .replace(/\b(chole)\s+(and|&)\s+(bhature)\b/gi, 'chole_and_bhature')
+    .replace(/\b(pav)\s+(and|&)\s+(bhaji)\b/gi, 'pav_and_bhaji')
+    .replace(/\b(red\s+velvet)\s+(and|&)\s+(white\s+chocolate)\b/gi, 'red_velvet_and_white_chocolate')
+    .replace(/\b(burn)\s+(to)\s+(hell)\b/gi, 'burn_to_hell')
+    .replace(/\b(cheesy|iphone|galaxy|ps|pixel|windows|i3|i5|i7|i9)\s*[-_ ]\s*(\d+)\b/gi, '$1_$2');
 
   const wordQtyMap = { 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'double': 2, 'pair': 2, 'triple': 3 };
   const qtyWords = Object.keys(wordQtyMap).join('|');
@@ -158,18 +298,23 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
       .replace(/^and\s+/i, '')
       .replace(/,\s*$/i, '')
       .replace(/^(?:buy|bue|by|bay|order|purchase|get|want|find|give|pls|please|plz|me)\s+/gi, '')
+      .replace(/_and_/g, ' & ')
+      .replace(/_/g, ' ')
       .trim();
 
     if (!s) return [];
 
-    // Check for unpunctuated multiple items inside this segment (e.g. "4 tandoori chicken tikka 3 kesari matka phirni 2 royal paneer dum biryani")
+    // Discard any segment that is actually a payment instruction or delivery destination
+    if (/\b(make\s+payment|payment|netbanking|net\s+banking|bank\s+of\s+baroda|baroda|sbi|hdfc|icici|canara|axis|upi|gpay|google\s+pay|phonepe|paytm|credit\s+card|debit\s+card|visa|mastercard|deliver|delivery|address|home|office|koramangala|residency)\b/i.test(s)) {
+      return [];
+    }
     const matches = [...s.matchAll(new RegExp(`(?:^|\\s+)(\\d+|${qtyWords})\\s*(?:x|pcs|pieces|plates|sets|units|box|boxes|dishes)?\\s*(?:of\\s+)?([a-z0-9\\s&'\\-_]+?)(?=(?:\\s+(?:\\d+|${qtyWords})\\b)|$)`, 'gi'))];
     if (matches.length > 1) {
       const results = [];
       for (const m of matches) {
         const rawQty = m[1].toLowerCase();
         const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-        const name = m[2].trim().replace(/^and\s+/i, '').replace(/_/g, '-');
+        const name = m[2].trim().replace(/^and\s+/i, '');
         if (name.length > 0) results.push({ query: name, quantity: q });
       }
       if (results.length > 0) return results;
@@ -180,7 +325,7 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     if (prefixMatch && prefixMatch[2].trim().length > 0) {
       const rawQty = prefixMatch[1].toLowerCase();
       const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-      return [{ query: prefixMatch[2].trim().replace(/_/g, '-'), quantity: q }];
+      return [{ query: prefixMatch[2].trim(), quantity: q }];
     }
 
     // Check Suffix Quantity: e.g. "burn to hell pizza 2 pcs"
@@ -188,10 +333,10 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     if (suffixMatch && suffixMatch[1].trim().length > 0) {
       const rawQty = suffixMatch[2].toLowerCase();
       const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-      return [{ query: suffixMatch[1].trim().replace(/_/g, '-'), quantity: q }];
+      return [{ query: suffixMatch[1].trim(), quantity: q }];
     }
 
-    return [{ query: s.replace(/_/g, '-'), quantity: 1 }];
+    return [{ query: s, quantity: 1 }];
   };
 
   // Split on "and", comma, plus, ampersand
@@ -203,7 +348,7 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   }
 
   if (items.length === 0 && cleaned.length > 0) {
-    items.push({ query: cleaned.replace(/_/g, '-'), quantity: 1 });
+    items.push({ query: cleaned.replace(/_and_/g, ' & ').replace(/_/g, ' '), quantity: 1 });
   }
 
   const querySummary = items.map(i => `${i.quantity > 1 ? i.quantity + 'x ' : ''}${i.query}`).join(', ');
@@ -247,6 +392,29 @@ const processPurchaseRequest = async ({
       intent: { query: 'Memory Query', isMemoryRecall: true },
       reply: memoryCheck.reply,
       steps: [{ text: `⚡ Agent Memory System: Retrieved user profile & past order memory for ${user.name} (${targetEmail})`, status: 'completed' }],
+      toolCalls: [],
+      selectedProduct: null,
+      order: null,
+      autoPaid: false,
+      requiresCheckout: false
+    };
+  }
+
+  // 1. Intercept Greetings, Merchant/Store Inquiries, and Non-Merchant Guardrails
+  const tempSessionContext = {
+    userAuth: { maxAmount: 15000, currency: 'INR' },
+    customerName: customerName || user.name,
+    customerEmail: targetEmail,
+    deliveryAddress: activeAddress,
+    merchantApiBase
+  };
+  const convCheck = await handleConversationalAndGuardrailQueries(message, user, tempSessionContext, apiKey);
+  if (convCheck.handled) {
+    return {
+      success: true,
+      intent: { query: 'Conversational Query', isConversational: true },
+      reply: convCheck.reply,
+      steps: [{ text: convCheck.stepText || `💬 Conversational Assistant: Processed user inquiry`, status: 'completed' }],
       toolCalls: [],
       selectedProduct: null,
       order: null,
@@ -320,9 +488,9 @@ Extract the user purchase intent from the natural language message into valid JS
   "isCatalogWide": boolean (true if user asks for "each item", "all items", "every item", "whole menu" from the store or a specific restaurant/brand),
   "targetShop": string or null (the specific restaurant, shop, or brand if specified, e.g. "Burger King", "La Pino'z Pizza", "Biryani By Kilo", "Mainland China", "The Belgian Waffle Co.", "Haldiram's", "Keychron", "Sony", "Logitech", etc., or null if entire store),
   "quantityPerItem": number (the quantity for each item if catalog-wide, default 1),
-  "items": [ { "query": string, "quantity": number } ] (list of specific items if not catalog-wide),
+  "items": [ { "query": string, "quantity": number } ] (list of specific product items to buy. CRITICAL RULE: Payment instructions like "and make payment using bank of baroda netbanking", "using sbi netbanking", "pay with upi", and delivery destinations like "deliver to home" are NOT products and MUST NEVER be included in the items array!),
   "budget": number or null (price limit mentioned in prompt, e.g. 5000),
-  "paymentMethod": string or null (e.g. "Visa", "Bob NetBanking", "UPI", "Amazon Card", etc.)
+  "paymentMethod": string or null (e.g. "Bank of Baroda NetBanking", "SBI NetBanking", "Visa", "UPI", "Amazon Card", etc.)
 }
 
 User Message: "${effectiveMessage.replace(/"/g, '\\"')}"
@@ -487,46 +655,84 @@ const runSimulatedBuyerAgent = async ({
         };
       }
 
-      // Step 2: Rerank candidates against item query
-      const qWords = itemIntent.query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+      // Step 2: Rerank candidates against item query with cross-niche intelligence
+      const qWords = itemIntent.query.toLowerCase().split(/[\s,_\-]+/).filter(w => w.length > 1);
       const rankedCandidates = [...searchResult.products].map(prod => {
-        const pTitle = prod.title.toLowerCase();
+        const pTitle = (prod.title || '').toLowerCase();
+        const pDesc = (prod.description || '').toLowerCase();
+        const pCategory = (prod.category || '').toLowerCase();
+        const pBrand = (prod.brand || prod.restaurantName || prod.instructor || '').toLowerCase();
+
         let score = 0;
-        if (pTitle.includes(itemIntent.query.toLowerCase())) score += 100;
+        const fullItemQuery = itemIntent.query.toLowerCase();
+
+        if (pTitle.includes(fullItemQuery)) score += 100;
+        if (fullItemQuery.includes(pTitle)) score += 80;
+
+        // Specialized synonym handling for "python for ds" -> "python for data science"
+        if ((fullItemQuery.includes('python') || fullItemQuery.includes('ds')) && pTitle.includes('python') && (pTitle.includes('data science') || pDesc.includes('data science'))) {
+          score += 90;
+        }
+
         qWords.forEach(w => {
+          if (w === 'ds' && (pTitle.includes('data science') || pDesc.includes('data science'))) {
+            score += 40;
+          }
           if (pTitle.includes(w)) {
-            if (['mutton', 'chicken', 'paneer', 'kolkata', 'hyderabadi', 'whopper', 'nutella', 'dimsum', 'waffle', 'pizza', 'keychron', 'sony', 'tikka', 'phirni', 'kebab', 'mouse', 'keyboard', 'headphones', 'charger', 'stand', 'hub'].includes(w)) {
-              score += 25;
-            } else {
-              score += 10;
-            }
+            score += 30;
+          } else if (pDesc.includes(w) || pCategory.includes(w) || pBrand.includes(w)) {
+            score += 15;
           }
         });
-        if (itemIntent.query.includes('mutton') && pTitle.includes('chicken')) score -= 50;
-        if (itemIntent.query.includes('chicken') && pTitle.includes('mutton')) score -= 50;
-        if (itemIntent.query.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 50;
-        if (itemIntent.query.includes('mouse') && pTitle.includes('keyboard')) score -= 50;
-        if (itemIntent.query.includes('keyboard') && pTitle.includes('mouse')) score -= 50;
+
+        // Negative penalties for conflicting categories
+        if (fullItemQuery.includes('mutton') && pTitle.includes('chicken')) score -= 50;
+        if (fullItemQuery.includes('chicken') && pTitle.includes('mutton')) score -= 50;
+        if (fullItemQuery.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 50;
+        if (fullItemQuery.includes('mouse') && pTitle.includes('keyboard')) score -= 50;
+        if (fullItemQuery.includes('keyboard') && pTitle.includes('mouse')) score -= 50;
+
         return { ...prod, matchScore: score };
       }).sort((a, b) => b.matchScore - a.matchScore);
 
       const chosenCandidate = rankedCandidates[0];
+
+      if (!chosenCandidate || chosenCandidate.matchScore <= 0) {
+        steps.push({ text: `No relevant products found in store catalog matching "${itemIntent.query}".`, status: 'failed' });
+        return {
+          success: false,
+          intent,
+          reply: `⚠️ **Product Not Found in Catalog**:\n\nI searched the merchant catalog for **"${itemIntent.query}"**, but could not find any matching products in this store.\n\n💡 *Tip: Please verify that you are asking on the correct store, or ask "what do you have?" to explore available items!*`,
+          steps,
+          toolCalls,
+          selectedProduct: null,
+          order: null,
+          requiresCheckout: false
+        };
+      }
+
       const productDetails = await executeTool('getProduct', { productId: chosenCandidate.id }, sessionContext);
       toolCalls.push({ tool: 'getProduct', args: { productId: chosenCandidate.id }, result: productDetails });
 
-      const lineTotal = productDetails.price * itemIntent.quantity;
-      totalGrandAmount += lineTotal;
-      evaluatedItems.push({
-        product: productDetails,
-        quantity: itemIntent.quantity,
-        unitPrice: productDetails.price,
-        lineTotal
-      });
+      // Check if product was already evaluated in basket to prevent duplicate resolution of compound names
+      const existingItem = evaluatedItems.find(i => i.product.id === productDetails.id);
+      if (existingItem) {
+        // Already selected once; do not duplicate item or charge twice
+      } else {
+        const lineTotal = productDetails.price * itemIntent.quantity;
+        totalGrandAmount += lineTotal;
+        evaluatedItems.push({
+          product: productDetails,
+          quantity: itemIntent.quantity,
+          unitPrice: productDetails.price,
+          lineTotal
+        });
 
-      steps.push({
-        text: `Selected: "${productDetails.title}" (${itemIntent.quantity}x @ ₹${productDetails.price.toLocaleString()} = ₹${lineTotal.toLocaleString()})`,
-        status: 'completed'
-      });
+        steps.push({
+          text: `Selected: "${productDetails.title}" (${itemIntent.quantity}x @ ₹${productDetails.price.toLocaleString()} = ₹${lineTotal.toLocaleString()})`,
+          status: 'completed'
+        });
+      }
     }
   }
 
@@ -713,6 +919,7 @@ const runSimulatedBuyerAgent = async ({
     selectedProduct: evaluatedItems[0]?.product,
     order: {
       ...orderResult,
+      paymentMethod: activeMethod,
       deliveryAddress: sessionContext.deliveryAddress,
       userEmail: sessionContext.customerEmail,
       status: autoExecutePayment ? 'confirmed' : 'created',
