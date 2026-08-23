@@ -94,12 +94,12 @@ class EmailService {
       <body>
         <div class="container">
           <div class="header">
-            <h1>⚡ Order Placed & Payment Captured!</h1>
-            <p>Razorpay Autonomous 0-Intervention Buying Agent</p>
+            <h1>⚡ Order Confirmed & Paid!</h1>
+            <p>Razorpay Smart Checkout Assistant</p>
           </div>
           <div class="content">
             <p>Hello <strong>${name}</strong>,</p>
-            <p>Your AI Shopping Agent has autonomously completed your purchase on your behalf with 0 human intervention:</p>
+            <p>Your order has been confirmed and paid successfully via Razorpay:</p>
             
             <div style="margin: 16px 0;">
               <span class="badge">✓ Payment Captured via Razorpay</span>

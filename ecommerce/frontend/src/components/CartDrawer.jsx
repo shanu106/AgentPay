@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ShoppingBag, Plus, Minus, Trash2, ShieldCheck } from 'lucide-react';
+import { SavedPaymentSelector } from './SavedPaymentSelector';
 
 export function CartDrawer({ isOpen, onClose, cart, updateQuantity, removeFromCart, cartTotal, onCheckout }) {
+  const [selectedMethod, setSelectedMethod] = useState(null);
+
   if (!isOpen) return null;
 
   return (
@@ -16,7 +19,7 @@ export function CartDrawer({ isOpen, onClose, cart, updateQuantity, removeFromCa
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '420px',
+        maxWidth: '440px',
         height: '100%',
         background: '#0a0f1d',
         borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
@@ -115,6 +118,13 @@ export function CartDrawer({ isOpen, onClose, cart, updateQuantity, removeFromCa
                   </div>
                 </div>
               ))}
+
+              {/* Shared Agent Memory Payment Selector */}
+              <SavedPaymentSelector
+                selectedMethod={selectedMethod}
+                onSelectMethod={setSelectedMethod}
+                userEmail="nawaz@gmail.com"
+              />
             </div>
           )}
         </div>
@@ -132,7 +142,7 @@ export function CartDrawer({ isOpen, onClose, cart, updateQuantity, removeFromCa
             </div>
 
             <button
-              onClick={onCheckout}
+              onClick={() => onCheckout(selectedMethod)}
               className="primary-btn"
               style={{ width: '100%', padding: '12px', fontSize: '14px', fontWeight: '700', borderRadius: '12px' }}
             >

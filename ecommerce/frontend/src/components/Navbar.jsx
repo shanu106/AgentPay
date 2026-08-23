@@ -80,7 +80,7 @@ export function Navbar({ searchQuery, setSearchQuery, onOpenCodeModal, onOpenCar
             style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', padding: '9px 15px' }}
           >
             <Code size={16} />
-            <span>Drop-In SDK Code</span>
+            <span>Integration Guide</span>
           </button>
 
           <button 

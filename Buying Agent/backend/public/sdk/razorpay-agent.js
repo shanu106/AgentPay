@@ -710,10 +710,10 @@
       </div>
       <div class="rzp-agent-trigger-text">
         <div class="rzp-agent-trigger-title">
-          <span>Razorpay Agentic Pay</span>
-          <span style="font-size:10px; background:#0284c7; padding:1px 5px; border-radius:4px;">AUTO</span>
+          <span>Razorpay AI Assistant</span>
+          <span style="font-size:10px; background:#0284c7; padding:1px 5px; border-radius:4px;">AI</span>
         </div>
-        <div class="rzp-agent-trigger-sub">Pre-Authorized AI Buying</div>
+        <div class="rzp-agent-trigger-sub">Instant Voice & Chat Pay</div>
       </div>
     </div>
 
@@ -725,10 +725,10 @@
           <div class="rzp-agent-badge-icon">R</div>
           <div class="rzp-agent-title-wrap">
             <h3>
-              <span>Razorpay AI Shopping Agent</span>
+              <span>Razorpay AI Assistant</span>
               <span style="font-size:10px; background:#0284c7; padding:1px 5px; border-radius:4px; font-weight:700;">PRO</span>
             </h3>
-            <span>⚡ Institutional Zero-Click Checkout Ready</span>
+            <span>⚡ Instant Checkout Enabled</span>
           </div>
         </div>
         <div class="rzp-agent-header-actions">
@@ -739,7 +739,7 @@
 
       <!-- Trust & Security Strip -->
       <div class="rzp-agent-trust-strip">
-        <span class="rzp-trust-badge-green">🔒 256-Bit Tokenized Auto-Debit</span>
+        <span class="rzp-trust-badge-green">🔒 256-Bit Encrypted Payments</span>
         <span>Razorpay Verified Gateway ✓</span>
       </div>
 
@@ -767,8 +767,8 @@
       <div class="rzp-agent-body" id="rzp-agent-chat-body">
         <div class="rzp-agent-empty" id="rzp-agent-empty-state">
           <div class="rzp-agent-empty-icon">⚡</div>
-          <div class="rzp-agent-empty-title">Instant Autonomous AI Shopping</div>
-          <div class="rzp-agent-empty-desc">Tell the AI agent what to buy. It will parse catalog availability, obey pre-auth limits, remember your address, and execute Razorpay payment with 0 clicks.</div>
+          <div class="rzp-agent-empty-title">Razorpay AI Assistant</div>
+          <div class="rzp-agent-empty-desc">Tell the assistant what you need. It checks live availability, applies your saved preferences, and secures your order instantly.</div>
           
           <div class="rzp-agent-chips" id="rzp-agent-suggestion-chips">
             <!-- Populated dynamically based on merchant niche -->
@@ -782,7 +782,7 @@
           type="text" 
           class="rzp-agent-input" 
           id="rzp-agent-input" 
-          placeholder="Ask a question or tell the agent what to buy..." 
+          placeholder="Ask a question or tell the assistant what to order..." 
         />
         <button class="rzp-agent-send-btn" id="rzp-agent-send-btn">
           Buy
@@ -792,11 +792,11 @@
       <!-- User Profile & Delivery Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-user-modal">
         <div class="rzp-agent-modal-header">
-          <h4>👤 User Profile & Delivery Memory</h4>
+          <h4>👤 User Profile & Delivery Address</h4>
           <button class="rzp-agent-btn-icon" id="rzp-agent-user-close-btn" style="background:#e2e8f0; color:#0f172a;">✕</button>
         </div>
         <div class="rzp-agent-form-group">
-          <label>Gmail / Email Address</label>
+          <label>Email Address</label>
           <input type="email" id="rzp-user-email-input" value="${currentUser.email}" placeholder="yourname@gmail.com" />
         </div>
         <div class="rzp-agent-form-group">
@@ -804,24 +804,21 @@
           <input type="text" id="rzp-user-name-input" value="${currentUser.name}" />
         </div>
         <div class="rzp-agent-form-group">
-          <label>Default Delivery Address</label>
+          <label>Delivery Address</label>
           <select id="rzp-user-address-select">
             <option value="home" selected>Home: Flat 402, Sunshine Heights, Koramangala - 560034</option>
             <option value="office">Office: WeWork Galaxy, Residency Road - 560025</option>
           </select>
         </div>
-        <div style="background:#f1f5f9; padding:10px; border-radius:8px; margin:8px 0; font-size:11px; color:#475569;">
-          📧 <strong>Gmail Confirmation</strong>: Order receipts & Razorpay payment confirmations will be dispatched to this email automatically.
-        </div>
         <button class="rzp-agent-send-btn" id="rzp-user-save-btn" style="width:100%; margin-top:10px;">
-          Save Profile & Login
+          Save Profile
         </button>
       </div>
 
       <!-- Multiple Payment Options & Pre-Auth Settings Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-settings-modal">
         <div class="rzp-agent-modal-header">
-          <h4>💳 Payment Methods & Pre-Auth</h4>
+          <h4>💳 Payment Methods & Preferences</h4>
           <button class="rzp-agent-btn-icon" id="rzp-agent-settings-close-btn" style="background:#e2e8f0; color:#0f172a;">✕</button>
         </div>
 
@@ -842,24 +839,20 @@
         </div>
 
         <div class="rzp-agent-form-group">
-          <label>Pre-Authorized Auto-Debit Limit (₹)</label>
+          <label>Pre-Authorized Spending Limit (₹)</label>
           <input type="number" id="rzp-settings-limit" value="${savedPayment.autoDebitLimit || 15000}" />
         </div>
 
         <div class="rzp-agent-form-group">
-          <label>Auto-Debit Execution Mode</label>
+          <label>Payment Confirmation Mode</label>
           <select id="rzp-settings-autodebit">
-            <option value="true" selected>Enabled (0-Click Autonomous Zero-Intervention Pay)</option>
-            <option value="false">Disabled (Ask confirmation before charging)</option>
+            <option value="true" selected>Pre-Authorized Instant Pay (Recommended)</option>
+            <option value="false">Confirm before charging</option>
           </select>
         </div>
 
-        <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:8px; padding:8px 10px; font-size:11px; color:#065f46; margin-bottom:10px;">
-          ✓ <em>Prompt Override Enabled</em>: If you mention a specific card or bank in your prompt (e.g. "pay with bob netbanking"), the agent will automatically prioritize that option!
-        </div>
-
         <button class="rzp-agent-send-btn" id="rzp-settings-save-btn" style="width:100%;">
-          Save Default Payment Instrument
+          Save Payment Preferences
         </button>
       </div>
     </div>
@@ -1287,7 +1280,7 @@
     cardEl.id = id;
     cardEl.innerHTML = `
       <div class="rzp-agent-reasoning-title">
-        <span>⚡ Razorpay Autonomous Execution Stream</span>
+        <span>⚡ Order Progress</span>
       </div>
       <div class="rzp-agent-step">
         <span class="rzp-agent-step-icon">⏳</span>
@@ -1302,7 +1295,7 @@
     const cardEl = document.getElementById(cardId);
     if (!cardEl) return;
 
-    let stepsHtml = `<div class="rzp-agent-reasoning-title"><span>⚡ Razorpay Autonomous Execution Stream</span></div>`;
+    let stepsHtml = `<div class="rzp-agent-reasoning-title"><span>⚡ Order Progress</span></div>`;
     steps.forEach(s => {
       const icon = s.status === 'completed' ? '✓' : (s.status === 'failed' || s.status === 'denied' ? '⚠️' : '⏳');
       const color = s.status === 'completed' ? '#059669' : (s.status === 'denied' ? '#dc2626' : '#2563eb');
@@ -1336,7 +1329,7 @@
     cardEl.innerHTML = `
       <div class="rzp-agent-order-header">
         <span style="display:flex; align-items:center; gap:6px;">
-          <span>🎉</span> <span>Order Placed & Captured!</span>
+          <span>🎉</span> <span>Order Confirmed & Paid!</span>
         </span>
         <span style="color:#0f172a; font-size:15px;">₹${amount.toLocaleString()}</span>
       </div>
@@ -1349,7 +1342,7 @@
         <div><strong>⚡ Razorpay Order ID:</strong> <code>${razorpayOrderId || 'order_xxx'}</code></div>
         <div><strong>🔒 Razorpay Payment ID:</strong> <code style="color:#0284c7; font-weight:bold;">${razorpayPaymentId}</code> (Captured ✓)</div>
         <div style="color:#2563eb; font-weight:600; margin-top:2px;">📧 Confirmation Receipt dispatched to: <strong>${escapeHtml(userEmail || 'nawaz@gmail.com')}</strong> ✓</div>
-        <div style="color:#059669; font-weight:700; margin-top:3px;">🛡️ 0 Human Intervention Auto-Debit Verified</div>
+        <div style="color:#059669; font-weight:700; margin-top:3px;">🛡️ Pre-Authorized Secure Payment Verified</div>
       </div>
     `;
     chatBody.appendChild(cardEl);

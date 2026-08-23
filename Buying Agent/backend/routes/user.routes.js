@@ -14,7 +14,10 @@ router.post('/address/default', userController.setDefaultAddress);
 router.get('/orders', userController.getUserOrders);
 router.get('/emails', userController.getUserEmails);
 
-// Default Payment Method
-router.post('/payment-method/default', userController.setDefaultPaymentMethod);
+// Payment Methods in Central Memory
+router.get('/payment-methods', userController.getPaymentMethods);
+router.post('/payment-methods/add', userController.addPaymentMethod);
+router.post('/payment-methods/default', userController.setDefaultPaymentMethod);
+router.post('/payment-methods/update', userController.updatePaymentMethod);
 
 module.exports = router;

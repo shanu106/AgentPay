@@ -517,22 +517,11 @@ Respond ONLY with valid JSON inside a markdown codeblock.`;
           intent.query = intent.isCatalogWide 
             ? `All ${shopName} Items (${intent.quantityPerItem || 1}x each)`
             : intent.items.map(i => `${i.quantity > 1 ? i.quantity + 'x ' : ''}${i.query}`).join(', ');
-          
-          addStep(`⚡ Gemini 3.6 Flash NLP Engine: Understood ${intent.isCatalogWide ? `Catalog-Wide [${shopName}] (${intent.quantityPerItem || 1}x each)` : `Basket [${intent.query}]`}`, 'completed');
         }
       }
     } catch (err) {
       console.warn('Gemini NLP fallback to heuristic parser:', err.message);
     }
-  }
-
-  const paymentLabel = paymentMethod.matchedFromPrompt ? `Payment Method: "${paymentMethod.label}" (Prompt Match ✓)` : `Payment Method: "${paymentMethod.label}" (Default ✓)`;
-  const addrLabel = `Delivery Address: "${activeAddress.label}" (${activeAddress.city}) ✓`;
-
-  if (intent.hasExplicitBudget) {
-    addStep(`Understanding purchase intent: Items=[${intent.query}], Budget=₹${intent.maxPrice.toLocaleString()}, ${paymentLabel}, ${addrLabel}`);
-  } else {
-    addStep(`Understanding purchase intent: Items=[${intent.query}], Pre-Auth Limit=₹${cardLimit.toLocaleString()}, ${paymentLabel}, ${addrLabel}`);
   }
 
   return runSimulatedBuyerAgent({ intent, sessionContext, steps, toolCalls, autoExecutePayment, savedPaymentMethod });
@@ -550,31 +539,12 @@ const runSimulatedBuyerAgent = async ({
   savedPaymentMethod = { type: 'card', last4: '1007', brand: 'Visa' },
   fallbackError = null 
 }) => {
-  // Step 1: searchProducts
-  const searchResult = await executeTool('searchProducts', { query: intent.query, maxPrice: intent.maxPrice }, sessionContext);
-  toolCalls.push({ tool: 'searchProducts', args: { query: intent.query, maxPrice: intent.maxPrice }, result: searchResult });
+  // Streamlined User-Facing Step 1: Search and match items
   steps.push({
-    text: `Searching merchant catalog for "${intent.query}" under ₹${intent.maxPrice.toLocaleString()}`,
-    status: 'completed',
-    count: searchResult.products?.length || 0
+    text: `Searching catalog for "${intent.query}"`,
+    status: 'completed'
   });
 
-  if (!searchResult.products || searchResult.products.length === 0) {
-    const limitLabel = intent.hasExplicitBudget ? `prompt budget of ₹${intent.maxPrice.toLocaleString()}` : `pre-authorized card limit of ₹${intent.maxPrice.toLocaleString()}`;
-    steps.push({ text: `No products found matching "${intent.query}" within your ${limitLabel}.`, status: 'failed' });
-    return {
-      success: false,
-      intent,
-      reply: `⚠️ **Purchase Blocked by Pre-Authorization Limit**:\n\nI searched the merchant catalog for **"${intent.query}"**, but no matching items were found within your **${limitLabel}**.\n\nNo order was created and 0 charges occurred.`,
-      steps,
-      toolCalls,
-      selectedProduct: null,
-      order: null,
-      requiresCheckout: false
-    };
-  }
-
-  // Step 1: Search and evaluate each item in intent.items
   const evaluatedItems = [];
   let totalGrandAmount = 0;
 
@@ -597,10 +567,6 @@ const runSimulatedBuyerAgent = async ({
     }
 
     const shopLabel = intent.targetShop ? `"${intent.targetShop.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}"` : 'the store';
-    steps.push({
-      text: `Discovered ${matchingProducts.length} items from ${shopLabel} (Quantity: ${intent.quantityPerItem || 1}x each)`,
-      status: 'completed'
-    });
 
     if (matchingProducts.length === 0) {
       steps.push({ text: `No products found from ${shopLabel}.`, status: 'failed' });
@@ -631,7 +597,7 @@ const runSimulatedBuyerAgent = async ({
       });
 
       steps.push({
-        text: `Included in basket: "${details.title}" (${qtyPerItem}x @ ₹${details.price.toLocaleString()} = ₹${lineTotal.toLocaleString()})`,
+        text: `Added to cart: ${details.title} (${qtyPerItem}x) • ₹${lineTotal.toLocaleString()}`,
         status: 'completed'
       });
     }
@@ -642,11 +608,11 @@ const runSimulatedBuyerAgent = async ({
 
       if (!searchResult.products || searchResult.products.length === 0) {
         const limitLabel = intent.hasExplicitBudget ? `budget of ₹${intent.maxPrice.toLocaleString()}` : `pre-auth limit of ₹${intent.maxPrice.toLocaleString()}`;
-        steps.push({ text: `No products found matching "${itemIntent.query}" within ${limitLabel}.`, status: 'failed' });
+        steps.push({ text: `No products found matching "${itemIntent.query}".`, status: 'failed' });
         return {
           success: false,
           intent,
-          reply: `⚠️ **Product Not Found**:\n\nI searched the merchant catalog for **"${itemIntent.query}"**, but could not find any matching items within your **${limitLabel}**.\n\nNo order was placed and 0 charges occurred.`,
+          reply: `⚠️ **Product Not Found**:\n\nI searched the merchant catalog for **"${itemIntent.query}"**, but could not find any matching items within your **${limitLabel}**.\n\nNo order was placed.`,
           steps,
           toolCalls,
           selectedProduct: null,
@@ -669,7 +635,6 @@ const runSimulatedBuyerAgent = async ({
         if (pTitle.includes(fullItemQuery)) score += 100;
         if (fullItemQuery.includes(pTitle)) score += 80;
 
-        // Specialized synonym handling for "python for ds" -> "python for data science"
         if ((fullItemQuery.includes('python') || fullItemQuery.includes('ds')) && pTitle.includes('python') && (pTitle.includes('data science') || pDesc.includes('data science'))) {
           score += 90;
         }
@@ -685,7 +650,6 @@ const runSimulatedBuyerAgent = async ({
           }
         });
 
-        // Negative penalties for conflicting categories
         if (fullItemQuery.includes('mutton') && pTitle.includes('chicken')) score -= 50;
         if (fullItemQuery.includes('chicken') && pTitle.includes('mutton')) score -= 50;
         if (fullItemQuery.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 50;
@@ -698,11 +662,11 @@ const runSimulatedBuyerAgent = async ({
       const chosenCandidate = rankedCandidates[0];
 
       if (!chosenCandidate || chosenCandidate.matchScore <= 0) {
-        steps.push({ text: `No relevant products found in store catalog matching "${itemIntent.query}".`, status: 'failed' });
+        steps.push({ text: `No relevant products found matching "${itemIntent.query}".`, status: 'failed' });
         return {
           success: false,
           intent,
-          reply: `⚠️ **Product Not Found in Catalog**:\n\nI searched the merchant catalog for **"${itemIntent.query}"**, but could not find any matching products in this store.\n\n💡 *Tip: Please verify that you are asking on the correct store, or ask "what do you have?" to explore available items!*`,
+          reply: `⚠️ **Product Not Found in Catalog**:\n\nI searched the merchant catalog for **"${itemIntent.query}"**, but could not find any matching products in this store.`,
           steps,
           toolCalls,
           selectedProduct: null,
@@ -714,11 +678,8 @@ const runSimulatedBuyerAgent = async ({
       const productDetails = await executeTool('getProduct', { productId: chosenCandidate.id }, sessionContext);
       toolCalls.push({ tool: 'getProduct', args: { productId: chosenCandidate.id }, result: productDetails });
 
-      // Check if product was already evaluated in basket to prevent duplicate resolution of compound names
       const existingItem = evaluatedItems.find(i => i.product.id === productDetails.id);
-      if (existingItem) {
-        // Already selected once; do not duplicate item or charge twice
-      } else {
+      if (!existingItem) {
         const lineTotal = productDetails.price * itemIntent.quantity;
         totalGrandAmount += lineTotal;
         evaluatedItems.push({
@@ -729,24 +690,24 @@ const runSimulatedBuyerAgent = async ({
         });
 
         steps.push({
-          text: `Selected: "${productDetails.title}" (${itemIntent.quantity}x @ ₹${productDetails.price.toLocaleString()} = ₹${lineTotal.toLocaleString()})`,
+          text: `Added to cart: ${productDetails.title} (${itemIntent.quantity > 1 ? itemIntent.quantity + 'x' : '1x'}) • ₹${lineTotal.toLocaleString()}`,
           status: 'completed'
         });
       }
     }
   }
 
-  // Strict Pre-Authorization Check against aggregate cart total
+  // Pre-Authorization Check against aggregate cart total
   if (totalGrandAmount > intent.maxPrice) {
-    const limitLabel = intent.hasExplicitBudget ? `prompt budget limit (₹${intent.maxPrice.toLocaleString()})` : `pre-authorized spending limit (₹${intent.maxPrice.toLocaleString()})`;
+    const limitLabel = intent.hasExplicitBudget ? `budget limit of ₹${intent.maxPrice.toLocaleString()}` : `pre-authorized limit of ₹${intent.maxPrice.toLocaleString()}`;
     steps.push({
-      text: `Pre-Authorization Blocked: Total order price ₹${totalGrandAmount.toLocaleString()} exceeds ${limitLabel}.`,
+      text: `Order total ₹${totalGrandAmount.toLocaleString()} exceeds ${limitLabel}.`,
       status: 'denied'
     });
     return {
       success: false,
       intent,
-      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\nThe multi-item order costs **₹${totalGrandAmount.toLocaleString()}**, which exceeds your **${limitLabel}**.\n\n### Itemized Breakdown:\n${evaluatedItems.map(i => `- ${i.quantity}x ${i.product.title}: ₹${i.lineTotal.toLocaleString()}`).join('\n')}\n\nNo payment was charged.`,
+      reply: `⚠️ **Purchase Blocked**:\n\nThe order total is **₹${totalGrandAmount.toLocaleString()}**, which exceeds your **${limitLabel}**.\n\nNo payment was charged.`,
       steps,
       toolCalls,
       selectedProduct: evaluatedItems[0]?.product,
@@ -755,17 +716,13 @@ const runSimulatedBuyerAgent = async ({
     };
   }
 
-  // Step 3: checkAvailability for items
+  // Check Availability
   for (const item of evaluatedItems) {
     const availResult = await executeTool('checkAvailability', { productId: item.product.id }, sessionContext);
     toolCalls.push({ tool: 'checkAvailability', args: { productId: item.product.id }, result: availResult });
   }
-  steps.push({
-    text: `All ${evaluatedItems.length} items checked and confirmed available on merchant`,
-    status: 'completed'
-  });
 
-  // Step 4: createOrder (Authorization check + multi-item batch order creation)
+  // Create Order
   const orderResult = await executeTool('createOrder', {
     items: evaluatedItems.map(i => ({ productId: i.product.id, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal })),
     productId: evaluatedItems[0]?.product.id,
@@ -775,13 +732,13 @@ const runSimulatedBuyerAgent = async ({
 
   if (orderResult.status === 'denied' || !orderResult.orderId) {
     steps.push({
-      text: `Backend Authorization: ${orderResult.error || 'DENIED'}`,
+      text: `Order creation failed: ${orderResult.error || 'Denied'}`,
       status: 'denied'
     });
     return {
       success: false,
       intent,
-      reply: `⚠️ **Purchase Blocked by Authorization Engine**:\n\n${orderResult.error}\n\nThe order total is **₹${totalGrandAmount.toLocaleString()}**, exceeding limit of **₹${intent.maxPrice.toLocaleString()}**.`,
+      reply: `⚠️ **Order Creation Failed**:\n\n${orderResult.error}`,
       steps,
       toolCalls,
       selectedProduct: evaluatedItems[0]?.product,
@@ -793,29 +750,16 @@ const runSimulatedBuyerAgent = async ({
   const activeMethod = sessionContext.paymentMethod || savedPaymentMethod;
   const methodLabel = activeMethod.label || `${activeMethod.brand || 'Saved Card'} (•••• ${activeMethod.last4 || '1007'})`;
 
-  steps.push({
-    text: `Pre-Authorization Verified: Total ₹${orderResult.amount.toLocaleString()} <= Pre-Auth Limit ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (APPROVED ✓)`,
-    status: 'completed'
-  });
-  steps.push({
-    text: `Merchant Order Created: #${orderResult.orderId} (${evaluatedItems.length} unique items, ${evaluatedItems.reduce((acc, i) => acc + i.quantity, 0)} total units)`,
-    status: 'completed'
-  });
-
-  // Step 5: initiatePayment
+  // Initiate Payment
   const paymentData = await executeTool('initiatePayment', { orderId: orderResult.orderId }, sessionContext);
   toolCalls.push({ tool: 'initiatePayment', args: { orderId: orderResult.orderId }, result: paymentData });
-  steps.push({
-    text: `Razorpay Order Ready: #${paymentData.razorpayOrderId || orderResult.orderId} (₹${orderResult.amount.toLocaleString()})`,
-    status: 'completed'
-  });
 
   let verificationResult = null;
 
-  // Step 6: Direct Zero-Click Autonomous Payment on Razorpay API (0 Human Intervention)
+  // Direct Autonomous Payment on Razorpay API
   if (autoExecutePayment) {
     steps.push({
-      text: `Executing Zero-Click Autonomous Payment on Razorpay via ${methodLabel} (${activeMethod.matchReason || 'Pre-Authorized'})`,
+      text: `Processing secure payment via ${methodLabel}`,
       status: 'completed'
     });
 
@@ -825,17 +769,12 @@ const runSimulatedBuyerAgent = async ({
     }, sessionContext);
     toolCalls.push({ tool: 'verifyPayment', args: { orderId: orderResult.orderId }, result: verificationResult });
 
-    const payMethodDisplay = activeMethod.method === 'netbanking' ? `NetBanking (${activeMethod.bankName || activeMethod.bank})` : (activeMethod.method === 'upi' ? 'Instant UPI' : methodLabel);
     steps.push({
-      text: `Razorpay Live Payment Captured: #${verificationResult.paymentId} (Method: ${payMethodDisplay} ✓, Status: Paid ✓)`,
-      status: 'completed'
-    });
-    steps.push({
-      text: `Order Confirmed & Payment Captured on Razorpay Dashboard!`,
+      text: `Payment captured & order placed successfully!`,
       status: 'completed'
     });
 
-    // 7. Save to Persistent User Order Memory
+    // Save to Persistent User Order Memory
     try {
       userStore.saveOrder(sessionContext.customerEmail, {
         orderId: orderResult.orderId,
@@ -855,15 +794,11 @@ const runSimulatedBuyerAgent = async ({
         deliveryAddress: sessionContext.deliveryAddress,
         paymentMethod: activeMethod
       });
-      steps.push({
-        text: `🧠 Order Memory Saved: Linked to profile ${sessionContext.customerName} (${sessionContext.customerEmail})`,
-        status: 'completed'
-      });
     } catch (memErr) {
       console.warn('User memory save warning:', memErr.message);
     }
 
-    // 8. Dispatch Automated Email Receipt (Gmail / Email Transporter)
+    // Dispatch Confirmation Email Receipt
     try {
       const mailResult = await emailService.sendOrderConfirmationEmail({
         userEmail: sessionContext.customerEmail,
@@ -881,19 +816,9 @@ const runSimulatedBuyerAgent = async ({
         payment: verificationResult,
         address: sessionContext.deliveryAddress
       });
-      if (mailResult.success && mailResult.mode === 'gmail_smtp') {
+      if (mailResult.success) {
         steps.push({
-          text: `📧 Live Gmail confirmation email delivered to: ${sessionContext.customerEmail} (Message ID: ${mailResult.messageId}) ✓`,
-          status: 'completed'
-        });
-      } else if (mailResult.mode === 'failed_smtp') {
-        steps.push({
-          text: `⚠️ Gmail SMTP Authentication Issue: Google rejected App Password for ${process.env.GMAIL_USER}. Saved in app receipt memory.`,
-          status: 'denied'
-        });
-      } else {
-        steps.push({
-          text: `📧 Order confirmation receipt recorded for: ${sessionContext.customerEmail} ✓`,
+          text: `📧 Confirmation email sent to ${sessionContext.customerEmail}`,
           status: 'completed'
         });
       }
@@ -907,8 +832,9 @@ const runSimulatedBuyerAgent = async ({
   const addrText = deliveryAddr ? `${deliveryAddr.label} (${deliveryAddr.street}, ${deliveryAddr.city} - ${deliveryAddr.pincode})` : 'Default Address (Bengaluru)';
 
   const reply = autoExecutePayment ?
-    `🎉 **Order Autonomously Placed & Captured! (0 Human Intervention)**\n\nI have successfully evaluated, ordered, and verified all **${evaluatedItems.length} items** for you:\n\n### 📋 Itemized Receipt:\n${itemsListFormatted}\n\n---\n- **Total Amount Paid**: **₹${orderResult.amount.toLocaleString()}**\n- **Payment Method**: ${methodLabel} (${activeMethod.matchedFromPrompt ? 'Specified in Prompt ✓' : 'Default Pre-Saved ✓'})\n- **Pre-Authorized Spending Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **📍 Delivery Address**: ${addrText}\n- **📧 Email Confirmation**: Sent to \`${sessionContext.customerEmail}\` ✓\n- **Store Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured & Paid in Razorpay Dashboard ✓)\n\nYour order is confirmed and will be delivered shortly!` :
-    `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Authoritative Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the **Razorpay Test Mode** payment step below to finalize your order!`;
+    `🎉 **Order Confirmed & Paid Successfully!**\n\nI have successfully ordered and secured payment for all **${evaluatedItems.length} items**:\n\n### 📋 Itemized Receipt:\n${itemsListFormatted}\n\n---\n- **Total Amount Paid**: **₹${orderResult.amount.toLocaleString()}**\n- **Payment Method**: ${methodLabel}\n- **Pre-Authorized Spending Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **📍 Delivery Address**: ${addrText}\n- **📧 Email Confirmation**: Sent to \`${sessionContext.customerEmail}\` ✓\n- **Store Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured ✓)\n\nYour order is confirmed and will be delivered shortly!` :
+    `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the payment step below to finalize your order!`;
+    `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the payment step below to finalize your order!`;
 
   return {
     success: true,

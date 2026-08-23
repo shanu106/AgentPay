@@ -1,10 +1,182 @@
 const fs = require('fs');
 const path = require('path');
-
 const os = require('os');
 const MEMORY_FILE = path.join(os.tmpdir(), 'razorpay_agent_user_memory.json');
 
-// Default initial users database
+// Standard payment method generator ensuring all users have Cards, NetBanking, and Instant UPI
+function generateStandardPaymentMethods(holderName = 'Nawaz Khan', userEmail = 'nawaz@gmail.com') {
+  const username = userEmail.split('@')[0].toLowerCase();
+  return [
+    // 💳 Cards
+    {
+      id: 'pm_visa_1007',
+      type: 'card',
+      method: 'card',
+      brand: 'Visa (Domestic)',
+      last4: '1007',
+      cardNumber: '4100 2800 0000 1007',
+      expiry: '12/28',
+      holder: holderName,
+      autoDebitLimit: 15000,
+      isDefault: true,
+      label: 'Visa Debit (•••• 1007)',
+      category: 'Cards'
+    },
+    {
+      id: 'pm_icici_4022',
+      type: 'card',
+      method: 'card',
+      brand: 'Amazon Pay ICICI Card',
+      last4: '4022',
+      cardNumber: '4315 2800 0000 4022',
+      expiry: '08/29',
+      holder: holderName,
+      autoDebitLimit: 25000,
+      isDefault: false,
+      label: 'Amazon Pay ICICI (•••• 4022)',
+      category: 'Cards'
+    },
+    {
+      id: 'pm_hdfc_3003',
+      type: 'card',
+      method: 'card',
+      brand: 'HDFC Millennia Card',
+      last4: '3003',
+      cardNumber: '4100 2800 0000 3003',
+      expiry: '05/30',
+      holder: holderName,
+      autoDebitLimit: 20000,
+      isDefault: false,
+      label: 'HDFC Millennia (•••• 3003)',
+      category: 'Cards'
+    },
+    {
+      id: 'pm_rupay_1005',
+      type: 'card',
+      method: 'card',
+      brand: 'RuPay Domestic Debit',
+      last4: '1005',
+      cardNumber: '6527 6589 0000 1005',
+      expiry: '11/27',
+      holder: holderName,
+      autoDebitLimit: 15000,
+      isDefault: false,
+      label: 'RuPay Debit (•••• 1005)',
+      category: 'Cards'
+    },
+
+    // 🏦 NetBanking
+    {
+      id: 'pm_bob_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'BARB_R',
+      bankName: 'Bank of Baroda',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'Bank of Baroda (BOB) NetBanking',
+      category: 'NetBanking'
+    },
+    {
+      id: 'pm_sbi_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'SBIN',
+      bankName: 'State Bank of India',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'SBI NetBanking',
+      category: 'NetBanking'
+    },
+    {
+      id: 'pm_hdfc_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'HDFC',
+      bankName: 'HDFC Bank',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'HDFC Bank NetBanking',
+      category: 'NetBanking'
+    },
+    {
+      id: 'pm_icici_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'ICIC',
+      bankName: 'ICICI Bank',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'ICICI Bank NetBanking',
+      category: 'NetBanking'
+    },
+    {
+      id: 'pm_canara_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'CNRB',
+      bankName: 'Canara Bank',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'Canara Bank NetBanking',
+      category: 'NetBanking'
+    },
+    {
+      id: 'pm_axis_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'UTIB',
+      bankName: 'Axis Bank',
+      holder: holderName,
+      autoDebitLimit: 50000,
+      isDefault: false,
+      label: 'Axis Bank NetBanking',
+      category: 'NetBanking'
+    },
+
+    // ⚡ Instant UPI
+    {
+      id: 'pm_upi_gpay',
+      type: 'upi',
+      method: 'upi',
+      vpa: `${username}@okhdfcbank`,
+      holder: holderName,
+      autoDebitLimit: 25000,
+      isDefault: false,
+      label: `Google Pay (${username}@okhdfcbank)`,
+      category: 'Instant UPI'
+    },
+    {
+      id: 'pm_upi_phonepe',
+      type: 'upi',
+      method: 'upi',
+      vpa: `${username}@ybl`,
+      holder: holderName,
+      autoDebitLimit: 25000,
+      isDefault: false,
+      label: `PhonePe (${username}@ybl)`,
+      category: 'Instant UPI'
+    },
+    {
+      id: 'pm_upi_paytm',
+      type: 'upi',
+      method: 'upi',
+      vpa: `${username}@paytm`,
+      holder: holderName,
+      autoDebitLimit: 25000,
+      isDefault: false,
+      label: `Paytm (${username}@paytm)`,
+      category: 'Instant UPI'
+    }
+  ];
+}
+
+// Initial users pre-populated with standard multi-payment options
 const initialUsers = {
   'nawaz@gmail.com': {
     name: 'Nawaz Khan',
@@ -35,134 +207,7 @@ const initialUsers = {
         isDefault: false
       }
     ],
-    paymentMethods: [
-      {
-        id: 'pm_visa_1007',
-        type: 'card',
-        method: 'card',
-        brand: 'Visa (Domestic)',
-        last4: '1007',
-        cardNumber: '4100 2800 0000 1007',
-        expiry: '12/28',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 15000,
-        isDefault: true,
-        label: 'Visa Debit (•••• 1007)'
-      },
-      {
-        id: 'pm_icici_4022',
-        type: 'card',
-        method: 'card',
-        brand: 'Amazon Pay ICICI Card',
-        last4: '4022',
-        cardNumber: '4315 2800 0000 4022',
-        expiry: '08/29',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 25000,
-        isDefault: false,
-        label: 'Amazon Pay ICICI (•••• 4022)'
-      },
-      {
-        id: 'pm_hdfc_3003',
-        type: 'card',
-        method: 'card',
-        brand: 'HDFC Millennia Card',
-        last4: '3003',
-        cardNumber: '4100 2800 0000 3003',
-        expiry: '05/30',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 20000,
-        isDefault: false,
-        label: 'HDFC Millennia (•••• 3003)'
-      },
-      {
-        id: 'pm_rupay_1005',
-        type: 'card',
-        method: 'card',
-        brand: 'RuPay Domestic Debit',
-        last4: '1005',
-        cardNumber: '6527 6589 0000 1005',
-        expiry: '11/27',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 15000,
-        isDefault: false,
-        label: 'RuPay Debit (•••• 1005)'
-      },
-      {
-        id: 'pm_bob_nb',
-        type: 'netbanking',
-        method: 'netbanking',
-        bank: 'BARB_R',
-        bankName: 'Bank of Baroda',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 50000,
-        isDefault: false,
-        label: 'Bank of Baroda (BOB) NetBanking'
-      },
-      {
-        id: 'pm_hdfc_nb',
-        type: 'netbanking',
-        method: 'netbanking',
-        bank: 'HDFC',
-        bankName: 'HDFC Bank',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 50000,
-        isDefault: false,
-        label: 'HDFC Bank NetBanking'
-      },
-      {
-        id: 'pm_sbi_nb',
-        type: 'netbanking',
-        method: 'netbanking',
-        bank: 'SBIN',
-        bankName: 'State Bank of India',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 50000,
-        isDefault: false,
-        label: 'SBI NetBanking'
-      },
-      {
-        id: 'pm_icici_nb',
-        type: 'netbanking',
-        method: 'netbanking',
-        bank: 'ICIC',
-        bankName: 'ICICI Bank',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 50000,
-        isDefault: false,
-        label: 'ICICI Bank NetBanking'
-      },
-      {
-        id: 'pm_upi_gpay',
-        type: 'upi',
-        method: 'upi',
-        vpa: 'nawaz@okhdfcbank',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 25000,
-        isDefault: false,
-        label: 'Google Pay UPI (nawaz@okhdfcbank)'
-      },
-      {
-        id: 'pm_upi_phonepe',
-        type: 'upi',
-        method: 'upi',
-        vpa: 'nawaz@ybl',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 25000,
-        isDefault: false,
-        label: 'PhonePe UPI (nawaz@ybl)'
-      },
-      {
-        id: 'pm_upi_paytm',
-        type: 'upi',
-        method: 'upi',
-        vpa: 'nawaz@paytm',
-        holder: 'Nawaz Khan',
-        autoDebitLimit: 25000,
-        isDefault: false,
-        label: 'Paytm UPI (nawaz@paytm)'
-      }
-    ],
+    paymentMethods: generateStandardPaymentMethods('Nawaz Khan', 'nawaz@gmail.com'),
     orders: []
   },
   'student@example.com': {
@@ -183,20 +228,7 @@ const initialUsers = {
         isDefault: true
       }
     ],
-    paymentMethods: [
-      {
-        id: 'pm_visa_1007',
-        type: 'card',
-        brand: 'Visa (Domestic)',
-        last4: '1007',
-        cardNumber: '4100 2800 0000 1007',
-        expiry: '12/28',
-        holder: 'Student Buyer',
-        autoDebitLimit: 15000,
-        isDefault: true,
-        label: 'Visa (Domestic) (•••• 1007)'
-      }
-    ],
+    paymentMethods: generateStandardPaymentMethods('Student Buyer', 'student@example.com'),
     orders: []
   }
 };
@@ -214,9 +246,9 @@ class UserStoreService {
         const parsed = JSON.parse(data);
         for (const [em, u] of Object.entries(parsed)) {
           if (this.users[em]) {
-            const initialPms = initialUsers[em]?.paymentMethods || initialUsers['nawaz@gmail.com'].paymentMethods;
+            const standardPms = generateStandardPaymentMethods(u.name || this.users[em].name, em);
             const savedPms = u.paymentMethods || [];
-            const mergedPms = [...initialPms];
+            const mergedPms = [...standardPms];
             savedPms.forEach(spm => {
               const idx = mergedPms.findIndex(p => p.id === spm.id);
               if (idx >= 0) mergedPms[idx] = { ...mergedPms[idx], ...spm };
@@ -224,7 +256,11 @@ class UserStoreService {
             });
             this.users[em] = { ...this.users[em], ...u, paymentMethods: mergedPms };
           } else {
-            this.users[em] = u;
+            const standardPms = generateStandardPaymentMethods(u.name || 'User', em);
+            this.users[em] = {
+              ...u,
+              paymentMethods: (u.paymentMethods && u.paymentMethods.length > 0) ? u.paymentMethods : standardPms
+            };
           }
         }
       } else {
@@ -249,7 +285,6 @@ class UserStoreService {
   getUser(email) {
     const cleanEmail = (email || 'nawaz@gmail.com').toLowerCase().trim();
     if (!this.users[cleanEmail]) {
-      // Auto-register new user
       const namePart = cleanEmail.split('@')[0];
       const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
       this.users[cleanEmail] = {
@@ -270,20 +305,7 @@ class UserStoreService {
             isDefault: true
           }
         ],
-        paymentMethods: [
-          {
-            id: 'pm_default_visa',
-            type: 'card',
-            brand: 'Visa (Domestic)',
-            last4: '1007',
-            cardNumber: '4100 2800 0000 1007',
-            expiry: '12/28',
-            holder: formattedName,
-            autoDebitLimit: 15000,
-            isDefault: true,
-            label: 'Visa (Domestic) (•••• 1007)'
-          }
-        ],
+        paymentMethods: generateStandardPaymentMethods(formattedName, cleanEmail),
         orders: []
       };
       this.saveMemory();
@@ -342,6 +364,12 @@ class UserStoreService {
     return defaultAddr;
   }
 
+  // Get all payment methods for user
+  getPaymentMethods(email) {
+    const user = this.getUser(email);
+    return user.paymentMethods || [];
+  }
+
   // Get default payment method
   getDefaultPaymentMethod(email) {
     const user = this.getUser(email);
@@ -358,6 +386,36 @@ class UserStoreService {
     return this.getDefaultPaymentMethod(email);
   }
 
+  // Add a new payment method (Card, Instant UPI, or NetBanking bank)
+  addPaymentMethod(email, methodData) {
+    const user = this.getUser(email);
+    const newPm = {
+      id: `pm_${methodData.type || 'card'}_${Date.now().toString().slice(-6)}`,
+      type: methodData.type || 'card',
+      method: methodData.type || 'card',
+      brand: methodData.brand || (methodData.type === 'upi' ? 'UPI' : 'Bank Card'),
+      last4: methodData.last4 || (methodData.cardNumber ? methodData.cardNumber.slice(-4) : '0000'),
+      cardNumber: methodData.cardNumber || '',
+      expiry: methodData.expiry || '12/30',
+      bank: methodData.bank || '',
+      bankName: methodData.bankName || '',
+      vpa: methodData.vpa || '',
+      holder: methodData.holder || user.name,
+      autoDebitLimit: Number(methodData.autoDebitLimit) || 25000,
+      isDefault: Boolean(methodData.isDefault),
+      label: methodData.label || `${methodData.brand || 'Card'} (${methodData.type})`,
+      category: methodData.category || (methodData.type === 'netbanking' ? 'NetBanking' : (methodData.type === 'upi' ? 'Instant UPI' : 'Cards'))
+    };
+
+    if (newPm.isDefault) {
+      user.paymentMethods.forEach(pm => { pm.isDefault = false; });
+    }
+
+    user.paymentMethods.push(newPm);
+    this.saveMemory();
+    return newPm;
+  }
+
   // Update payment method spending limits or details
   updatePaymentMethod(email, methodId, updateData) {
     const user = this.getUser(email);
@@ -365,6 +423,9 @@ class UserStoreService {
     if (target) {
       if (updateData.autoDebitLimit) target.autoDebitLimit = Number(updateData.autoDebitLimit);
       if (updateData.holder) target.holder = updateData.holder;
+      if (updateData.vpa) target.vpa = updateData.vpa;
+      if (updateData.bank) target.bank = updateData.bank;
+      if (updateData.bankName) target.bankName = updateData.bankName;
       if (updateData.isDefault) {
         user.paymentMethods.forEach(pm => { pm.isDefault = (pm.id === target.id); });
       }

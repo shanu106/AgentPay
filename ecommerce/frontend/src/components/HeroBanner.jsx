@@ -16,7 +16,7 @@ export function HeroBanner({ onOpenAgent }) {
       <div style={{ maxWidth: '720px', position: 'relative', zIndex: 2 }}>
         <div className="glow-badge" style={{ marginBottom: '14px' }}>
           <Sparkles size={13} />
-          <span>Razorpay Agentic Commerce Drop-In Module</span>
+          <span>Razorpay Smart Commerce Assistant</span>
         </div>
         
         <h1 style={{
@@ -27,7 +27,7 @@ export function HeroBanner({ onOpenAgent }) {
           color: '#ffffff',
           marginBottom: '14px'
         }}>
-          Autonomous 0-Click Shopping for Modern E-Commerce
+          Conversational Shopping & Instant Secure Checkout
         </h1>
         
         <p style={{

@@ -56,6 +56,29 @@ const getUserEmails = (req, res) => {
   res.json({ success: true, count: emails.length, emails });
 };
 
+const getPaymentMethods = (req, res) => {
+  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+  const paymentMethods = userStore.getPaymentMethods(email);
+  const defaultMethod = userStore.getDefaultPaymentMethod(email);
+  res.json({
+    success: true,
+    count: paymentMethods.length,
+    paymentMethods,
+    defaultMethod
+  });
+};
+
+const addPaymentMethod = (req, res) => {
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const newMethod = userStore.addPaymentMethod(email, req.body);
+  res.json({
+    success: true,
+    message: 'Payment method stored in agent memory successfully',
+    paymentMethod: newMethod,
+    paymentMethods: userStore.getPaymentMethods(email)
+  });
+};
+
 const setDefaultPaymentMethod = (req, res) => {
   const { methodId } = req.body;
   const email = (req.body.email || activeUserEmail).toLowerCase().trim();
@@ -63,7 +86,20 @@ const setDefaultPaymentMethod = (req, res) => {
   res.json({
     success: true,
     paymentMethod: defaultMethod,
+    paymentMethods: userStore.getPaymentMethods(email),
     message: `Default payment method set to ${defaultMethod.label || defaultMethod.brand}`
+  });
+};
+
+const updatePaymentMethod = (req, res) => {
+  const { methodId, ...updateData } = req.body;
+  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+  const updated = userStore.updatePaymentMethod(email, methodId, updateData);
+  res.json({
+    success: true,
+    message: 'Payment method updated in agent memory',
+    paymentMethod: updated,
+    paymentMethods: userStore.getPaymentMethods(email)
   });
 };
 
@@ -76,6 +112,9 @@ module.exports = {
   setDefaultAddress,
   getUserOrders,
   getUserEmails,
+  getPaymentMethods,
+  addPaymentMethod,
   setDefaultPaymentMethod,
+  updatePaymentMethod,
   getActiveUserEmail
 };

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ShoppingBag, Plus, Minus, Trash2, ShieldCheck, MapPin, Bike } from 'lucide-react';
+import { SavedPaymentSelector } from './SavedPaymentSelector';
 
 export function CartDrawer({
   isOpen,
@@ -15,6 +16,8 @@ export function CartDrawer({
   deliveryAddress,
   onProceedToPayment
 }) {
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
+
   if (!isOpen) return null;
 
   return (
@@ -140,6 +143,13 @@ export function CartDrawer({
                   </div>
                 ))}
               </div>
+
+              {/* Shared Agent Memory Payment Selector */}
+              <SavedPaymentSelector
+                selectedMethod={selectedPaymentMethod}
+                onSelectMethod={setSelectedPaymentMethod}
+                userEmail="nawaz@gmail.com"
+              />
 
               {/* Bill Details */}
               <div style={{ background: '#fdfdfd', borderRadius: '12px', padding: '16px', border: '1px solid #f0f0f0' }}>

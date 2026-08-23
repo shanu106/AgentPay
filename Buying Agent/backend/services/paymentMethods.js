@@ -173,6 +173,38 @@ function resolvePaymentMethod(message = '', defaultMethod = null) {
     };
   }
 
+  // 8. Check for Kotak Mahindra Bank NetBanking
+  if (text.includes('kotak') || text.includes('kotak mahindra')) {
+    return {
+      id: 'pm_kotak_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'KKBK',
+      bankName: 'Kotak Mahindra Bank',
+      holder: 'User',
+      label: 'Kotak Mahindra Bank NetBanking',
+      autoDebitLimit: 50000,
+      matchedFromPrompt: true,
+      matchReason: 'Recognized Kotak Mahindra Bank NetBanking from prompt'
+    };
+  }
+
+  // 9. Check for Axis Bank NetBanking
+  if (text.includes('axis') || text.includes('axis bank')) {
+    return {
+      id: 'pm_axis_nb',
+      type: 'netbanking',
+      method: 'netbanking',
+      bank: 'UTIB',
+      bankName: 'Axis Bank',
+      holder: 'User',
+      label: 'Axis Bank NetBanking',
+      autoDebitLimit: 50000,
+      matchedFromPrompt: true,
+      matchReason: 'Recognized Axis Bank NetBanking from prompt'
+    };
+  }
+
   // 8. General NetBanking keyword fallback (defaults to BOB)
   if (text.includes('net banking') || text.includes('netbanking')) {
     return {

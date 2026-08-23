@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchCourseById, createPaymentOrder, verifyPayment } from '../api/payment';
+import { SavedPaymentSelector } from './SavedPaymentSelector';
 import './Checkout.css';
 
 // Helper to ensure Razorpay checkout script is loaded
@@ -25,6 +26,7 @@ function Checkout() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
 
   const [formData, setFormData] = useState({
     customerName: '',
@@ -207,6 +209,13 @@ function Checkout() {
               />
               {formErrors.customerEmail && <span className="field-error">{formErrors.customerEmail}</span>}
             </div>
+
+            {/* Razorpay Agent Multi-Payment Selector */}
+            <SavedPaymentSelector
+              selectedMethod={selectedPaymentMethod}
+              onSelectMethod={setSelectedPaymentMethod}
+              userEmail={formData.customerEmail || 'nawaz@gmail.com'}
+            />
 
             {error && (
               <div className="payment-error">

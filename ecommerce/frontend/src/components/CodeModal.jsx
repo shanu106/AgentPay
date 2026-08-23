@@ -47,7 +47,7 @@ export function CodeModal({ isOpen, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Code size={20} color="#38bdf8" />
             <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#ffffff', margin: 0 }}>
-              Razorpay Agent Drop-In SDK
+              Razorpay AI Assistant Integration
             </h3>
           </div>
           <button 
