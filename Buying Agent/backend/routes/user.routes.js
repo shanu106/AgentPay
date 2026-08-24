@@ -21,5 +21,7 @@ router.get('/payment-methods', userController.getPaymentMethods);
 router.post('/payment-methods/add', userController.addPaymentMethod);
 router.post('/payment-methods/default', userController.setDefaultPaymentMethod);
 router.post('/payment-methods/update', userController.updatePaymentMethod);
+router.post('/payment-methods/delete', userController.deletePaymentMethod);
+router.delete('/payment-methods', userController.deletePaymentMethod);
 
 module.exports = router;

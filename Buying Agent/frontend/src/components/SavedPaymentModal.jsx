@@ -1,375 +1,667 @@
-import React, { useState } from 'react';
-import { updateSavedPaymentMethod } from '../api/agentApi';
+import React, { useState, useEffect } from 'react';
+import { fetchPaymentMethods, addPaymentMethod, setDefaultPaymentMethod, deletePaymentMethod, updatePaymentMethod } from '../api/agentApi';
 
-const multiPaymentPresets = [
-  // Cards
-  { id: 'pm_visa_1007', type: 'card', brand: 'Visa (Domestic)', last4: '1007', label: 'Visa Domestic Debit (•••• 1007)', autoDebitLimit: 15000, category: 'cards', icon: '💳' },
-  { id: 'pm_icici_4022', type: 'card', brand: 'Amazon Pay ICICI Card', last4: '4022', label: 'Amazon Pay ICICI (•••• 4022)', autoDebitLimit: 25000, category: 'cards', icon: '💳' },
-  { id: 'pm_hdfc_3003', type: 'card', brand: 'HDFC Millennia Card', last4: '3003', label: 'HDFC Millennia (•••• 3003)', autoDebitLimit: 20000, category: 'cards', icon: '💳' },
-  { id: 'pm_rupay_1005', type: 'card', brand: 'RuPay Domestic Debit', last4: '1005', label: 'RuPay Debit (•••• 1005)', autoDebitLimit: 15000, category: 'cards', icon: '💳' },
-  // NetBanking
-  { id: 'pm_bob_nb', type: 'netbanking', brand: 'Bank of Baroda', bankName: 'Bank of Baroda', label: 'Bank of Baroda (BOB) NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  { id: 'pm_sbi_nb', type: 'netbanking', brand: 'State Bank of India', bankName: 'State Bank of India', label: 'SBI NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  { id: 'pm_hdfc_nb', type: 'netbanking', brand: 'HDFC Bank', bankName: 'HDFC Bank', label: 'HDFC Bank NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  { id: 'pm_icici_nb', type: 'netbanking', brand: 'ICICI Bank', bankName: 'ICICI Bank', label: 'ICICI Bank NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  { id: 'pm_canara_nb', type: 'netbanking', brand: 'Canara Bank', bankName: 'Canara Bank', label: 'Canara Bank NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  { id: 'pm_axis_nb', type: 'netbanking', brand: 'Axis Bank', bankName: 'Axis Bank', label: 'Axis Bank NetBanking', autoDebitLimit: 50000, category: 'netbanking', icon: '🏦' },
-  // UPI
-  { id: 'pm_upi_gpay', type: 'upi', brand: 'Google Pay UPI', vpa: 'nawaz@okhdfcbank', label: 'Google Pay UPI (nawaz@okhdfcbank)', autoDebitLimit: 25000, category: 'upi', icon: '⚡' },
-  { id: 'pm_upi_phonepe', type: 'upi', brand: 'PhonePe UPI', vpa: 'nawaz@ybl', label: 'PhonePe UPI (nawaz@ybl)', autoDebitLimit: 25000, category: 'upi', icon: '⚡' },
-  { id: 'pm_upi_paytm', type: 'upi', brand: 'Paytm UPI', vpa: 'nawaz@paytm', label: 'Paytm UPI (nawaz@paytm)', autoDebitLimit: 25000, category: 'upi', icon: '⚡' }
+const popularBanks = [
+  { code: 'SBIN', name: 'State Bank of India', label: 'SBI NetBanking' },
+  { code: 'HDFC', name: 'HDFC Bank', label: 'HDFC Bank NetBanking' },
+  { code: 'ICIC', name: 'ICICI Bank', label: 'ICICI Bank NetBanking' },
+  { code: 'BARB_R', name: 'Bank of Baroda', label: 'Bank of Baroda NetBanking' },
+  { code: 'UTIB', name: 'Axis Bank', label: 'Axis Bank NetBanking' },
+  { code: 'KKBK', name: 'Kotak Mahindra Bank', label: 'Kotak Mahindra NetBanking' },
+  { code: 'PUNB_R', name: 'Punjab National Bank', label: 'PNB NetBanking' },
+  { code: 'CNRB', name: 'Canara Bank', label: 'Canara Bank NetBanking' }
 ];
 
-function SavedPaymentModal({ isOpen, onClose, savedPayment, onPaymentUpdated }) {
-  const [activeTab, setActiveTab] = useState('cards');
-  const [selectedMethodId, setSelectedMethodId] = useState(savedPayment?.id || 'pm_visa_1007');
-  const [enabled, setEnabled] = useState(savedPayment?.enabled !== false);
-  const [brand, setBrand] = useState(savedPayment?.brand || 'Visa (Domestic)');
-  const [last4, setLast4] = useState(savedPayment?.last4 || '1007');
-  const [holder, setHolder] = useState(savedPayment?.holder || 'Nawaz Khan');
-  const [autoDebitLimit, setAutoDebitLimit] = useState(savedPayment?.autoDebitLimit || 15000);
-  const [showAddNew, setShowAddNew] = useState(false);
-  const [newMethodType, setNewMethodType] = useState('card');
-  const [newMethodName, setNewMethodName] = useState('');
-  const [newMethodIdentifier, setNewMethodIdentifier] = useState('');
+function SavedPaymentModal({ isOpen, onClose, userEmail = 'nawaz@gmail.com', savedPayment, onPaymentUpdated }) {
+  const [methods, setMethods] = useState([]);
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'add_card' | 'add_nb' | 'add_upi'
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  if (!isOpen) return null;
+  // New Card Form
+  const [cardHolder, setCardHolder] = useState('Nawaz Khan');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('12/28');
+  const [cardBrand, setCardBrand] = useState('Visa Platinum Debit');
+  const [cardLimit, setCardLimit] = useState(25000);
 
-  const handleMethodSelect = (preset) => {
-    setSelectedMethodId(preset.id);
-    setBrand(preset.brand);
-    if (preset.last4) setLast4(preset.last4);
-    if (preset.autoDebitLimit) setAutoDebitLimit(preset.autoDebitLimit);
-  };
+  // New NetBanking Form
+  const [selectedBankCode, setSelectedBankCode] = useState('SBIN');
+  const [nbHolder, setNbHolder] = useState('Nawaz Khan');
+  const [nbLimit, setNbLimit] = useState(50000);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  // New UPI Form
+  const [upiVpa, setUpiVpa] = useState('');
+  const [upiProvider, setUpiProvider] = useState('Google Pay');
+  const [upiLimit, setUpiLimit] = useState(25000);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadMethods();
+    }
+  }, [isOpen, userEmail]);
+
+  const loadMethods = async () => {
     try {
       setLoading(true);
-      const chosenPreset = multiPaymentPresets.find(p => p.id === selectedMethodId) || { brand, last4, type: 'card' };
-      const res = await updateSavedPaymentMethod({
-        methodId: selectedMethodId,
-        enabled,
-        brand: chosenPreset.brand,
-        last4: chosenPreset.last4 || '1007',
-        type: chosenPreset.type,
-        method: chosenPreset.type,
-        label: chosenPreset.label,
-        holder,
-        autoDebitLimit: Number(autoDebitLimit),
-        isDefault: true
-      });
-      setMsg({ success: true, text: `Default payment method set to ${chosenPreset.label} in Agent Memory!` });
-      if (onPaymentUpdated) onPaymentUpdated(res.paymentMethod || chosenPreset);
-      setTimeout(() => {
-        onClose();
-        setMsg(null);
-      }, 1200);
+      const data = await fetchPaymentMethods(userEmail);
+      if (data.paymentMethods) {
+        setMethods(data.paymentMethods);
+      }
     } catch (err) {
-      setMsg({ success: false, text: err.message || 'Failed to update payment details.' });
+      console.warn('Failed to load payment methods from PostgreSQL:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddNewMethod = async (e) => {
+  if (!isOpen) return null;
+
+  const handleSetDefault = async (methodId) => {
+    try {
+      setLoading(true);
+      const res = await setDefaultPaymentMethod(methodId, userEmail);
+      setMsg({ success: true, text: res.message || 'Default payment method updated in PostgreSQL!' });
+      await loadMethods();
+      if (onPaymentUpdated) onPaymentUpdated(res.paymentMethod);
+    } catch (err) {
+      setMsg({ success: false, text: err.message || 'Failed to update default payment method.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMethod = async (methodId, label) => {
+    if (!window.confirm(`Are you sure you want to remove "${label}" from your payment methods?`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await deletePaymentMethod(methodId, userEmail);
+      setMsg({ success: true, text: `"${label}" removed successfully from PostgreSQL database.` });
+      await loadMethods();
+      if (onPaymentUpdated && res.defaultMethod) onPaymentUpdated(res.defaultMethod);
+    } catch (err) {
+      setMsg({ success: false, text: err.message || 'Failed to delete payment method.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateCard = async (e) => {
     e.preventDefault();
-    if (!newMethodName.trim() || !newMethodIdentifier.trim()) {
-      setMsg({ success: false, text: 'Please fill in all details for the new payment option.' });
+    const cleanNum = cardNumber.replace(/\s+/g, '');
+    if (cleanNum.length < 12) {
+      setMsg({ success: false, text: 'Please enter a valid card number (at least 12-16 digits).' });
       return;
     }
 
     try {
       setLoading(true);
-      const payload = {
-        type: newMethodType,
-        brand: newMethodName,
-        holder,
-        autoDebitLimit: Number(autoDebitLimit) || 25000,
+      const last4 = cleanNum.slice(-4);
+      const res = await addPaymentMethod({
+        type: 'card',
+        method: 'card',
+        brand: cardBrand,
+        last4,
+        cardNumber: cleanNum,
+        expiry: cardExpiry,
+        holder: cardHolder,
+        label: `${cardBrand} (•••• ${last4})`,
+        category: 'Cards',
+        autoDebitLimit: Number(cardLimit) || 25000,
         isDefault: true
-      };
+      }, userEmail);
 
-      if (newMethodType === 'card') {
-        payload.last4 = newMethodIdentifier.slice(-4) || '9999';
-        payload.cardNumber = newMethodIdentifier;
-        payload.label = `${newMethodName} (•••• ${payload.last4})`;
-      } else if (newMethodType === 'netbanking') {
-        payload.bankName = newMethodName;
-        payload.bank = newMethodIdentifier.toUpperCase();
-        payload.label = `${newMethodName} NetBanking`;
-      } else if (newMethodType === 'upi') {
-        payload.vpa = newMethodIdentifier;
-        payload.label = `${newMethodName} (${newMethodIdentifier})`;
-      }
-
-      const res = await fetch('/api/user/payment-methods/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(r => r.json());
-
-      if (res.success) {
-        setMsg({ success: true, text: `Added ${payload.label} to Agent Memory!` });
-        setSelectedMethodId(res.paymentMethod.id);
-        setShowAddNew(false);
-        if (onPaymentUpdated) onPaymentUpdated(res.paymentMethod);
-      }
+      setMsg({ success: true, text: 'New card stored securely in PostgreSQL database!' });
+      setCardNumber('');
+      setActiveTab('all');
+      await loadMethods();
+      if (onPaymentUpdated && res.paymentMethod) onPaymentUpdated(res.paymentMethod);
     } catch (err) {
-      setMsg({ success: false, text: err.message || 'Failed to save new method' });
+      setMsg({ success: false, text: err.message || 'Failed to save card.' });
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredPresets = multiPaymentPresets.filter(p => p.category === activeTab);
+  const handleCreateNetBanking = async (e) => {
+    e.preventDefault();
+    const bankObj = popularBanks.find(b => b.code === selectedBankCode) || popularBanks[0];
+
+    try {
+      setLoading(true);
+      const res = await addPaymentMethod({
+        type: 'netbanking',
+        method: 'netbanking',
+        brand: bankObj.name,
+        bank: bankObj.code,
+        bankName: bankObj.name,
+        holder: nbHolder,
+        label: bankObj.label,
+        category: 'NetBanking',
+        autoDebitLimit: Number(nbLimit) || 50000,
+        isDefault: true
+      }, userEmail);
+
+      setMsg({ success: true, text: `NetBanking account for ${bankObj.name} stored in PostgreSQL database!` });
+      setActiveTab('all');
+      await loadMethods();
+      if (onPaymentUpdated && res.paymentMethod) onPaymentUpdated(res.paymentMethod);
+    } catch (err) {
+      setMsg({ success: false, text: err.message || 'Failed to save NetBanking account.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateUpi = async (e) => {
+    e.preventDefault();
+    if (!upiVpa.includes('@')) {
+      setMsg({ success: false, text: 'Please enter a valid UPI ID / VPA (e.g. yourname@okaxis).' });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await addPaymentMethod({
+        type: 'upi',
+        method: 'upi',
+        brand: upiProvider,
+        vpa: upiVpa.trim(),
+        holder: userEmail.split('@')[0],
+        label: `${upiProvider} (${upiVpa.trim()})`,
+        category: 'UPI',
+        autoDebitLimit: Number(upiLimit) || 25000,
+        isDefault: true
+      }, userEmail);
+
+      setMsg({ success: true, text: 'UPI VPA stored securely in PostgreSQL database!' });
+      setUpiVpa('');
+      setActiveTab('all');
+      await loadMethods();
+      if (onPaymentUpdated && res.paymentMethod) onPaymentUpdated(res.paymentMethod);
+    } catch (err) {
+      setMsg({ success: false, text: err.message || 'Failed to save UPI VPA.' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: '580px', background: '#0a192f', border: '1px solid #1e3a8a', color: '#f8fafc' }} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '1.4rem', background: '#0284c7', padding: '6px', borderRadius: '8px' }}>💳</span>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '92vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+        
+        {/* Modal Header */}
+        <div className="modal-header" style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #0284c7, #2563eb)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px'
+            }}>
+              💳
+            </div>
             <div>
-              <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem' }}>Universal Multi-Payment Vault</h3>
-              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                Stored in Agent Memory • Synced across LearnHub, NovaStore, and Zomato
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>
+                Payment Methods & Pre-Authorized Auto-Debit
+              </h3>
+              <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                PostgreSQL Stored Payment Instruments for <strong>{userEmail}</strong>
               </p>
             </div>
           </div>
-          <button className="btn-close-drawer" onClick={onClose} style={{ color: '#fff' }}>✕</button>
+          <button className="modal-close-btn" onClick={onClose}>&times;</button>
         </div>
 
-        <div className="modal-body" style={{ padding: '18px' }}>
-          {/* Segmented Tabs */}
-          <div style={{
-            display: 'flex',
-            background: 'rgba(255, 255, 255, 0.06)',
-            borderRadius: '10px',
-            padding: '4px',
-            gap: '4px',
-            marginBottom: '16px'
-          }}>
-            {[
-              { id: 'cards', label: '💳 Cards' },
-              { id: 'netbanking', label: '🏦 NetBanking' },
-              { id: 'upi', label: '⚡ Instant UPI' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => { setActiveTab(tab.id); setShowAddNew(false); }}
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  background: activeTab === tab.id ? '#0284c7' : 'transparent',
-                  color: activeTab === tab.id ? '#fff' : '#94a3b8',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  fontWeight: '700',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        {/* Tab Navigation */}
+        <div style={{
+          display: 'flex',
+          gap: '6px',
+          background: 'rgba(0, 0, 0, 0.25)',
+          borderRadius: '8px',
+          padding: '4px',
+          margin: '14px 0 10px 0',
+          flexWrap: 'wrap'
+        }}>
+          <button
+            onClick={() => { setActiveTab('all'); setMsg(null); }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '13px',
+              background: activeTab === 'all' ? 'var(--accent-blue, #2563eb)' : 'transparent',
+              color: activeTab === 'all' ? '#fff' : 'var(--text-secondary)'
+            }}
+          >
+            📋 All Saved ({methods.length})
+          </button>
+          <button
+            onClick={() => { setActiveTab('add_card'); setMsg(null); }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '13px',
+              background: activeTab === 'add_card' ? 'var(--accent-blue, #2563eb)' : 'transparent',
+              color: activeTab === 'add_card' ? '#fff' : 'var(--text-secondary)'
+            }}
+          >
+            💳 + Add Card
+          </button>
+          <button
+            onClick={() => { setActiveTab('add_nb'); setMsg(null); }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '13px',
+              background: activeTab === 'add_nb' ? 'var(--accent-blue, #2563eb)' : 'transparent',
+              color: activeTab === 'add_nb' ? '#fff' : 'var(--text-secondary)'
+            }}
+          >
+            🏦 + Add NetBanking
+          </button>
+          <button
+            onClick={() => { setActiveTab('add_upi'); setMsg(null); }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '13px',
+              background: activeTab === 'add_upi' ? 'var(--accent-blue, #2563eb)' : 'transparent',
+              color: activeTab === 'add_upi' ? '#fff' : 'var(--text-secondary)'
+            }}
+          >
+            ⚡ + Add UPI
+          </button>
+        </div>
 
-          {!showAddNew ? (
+        {msg && (
+          <div style={{
+            background: msg.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+            border: `1px solid ${msg.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+            borderRadius: '8px',
+            padding: '10px 12px',
+            fontSize: '13px',
+            color: msg.success ? '#34d399' : '#f87171',
+            marginBottom: '12px'
+          }}>
+            {msg.success ? '✓' : '⚠️'} {msg.text}
+          </div>
+        )}
+
+        {/* Tab Content Container */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+          
+          {/* TAB 1: ALL METHODS LIST */}
+          {activeTab === 'all' && (
             <div>
-              {/* Payment Instrument Options */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px', maxHeight: '180px', overflowY: 'auto' }}>
-                {filteredPresets.map((p) => {
-                  const isSelected = selectedMethodId === p.id;
-                  return (
+              {loading ? (
+                <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  Loading payment methods from PostgreSQL...
+                </div>
+              ) : methods.length === 0 ? (
+                <div style={{ padding: '30px 0', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  No payment methods stored yet. Click "+ Add Card" or "+ Add NetBanking" above!
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {methods.map((method) => (
                     <div
-                      key={p.id}
-                      onClick={() => handleMethodSelect(p)}
+                      key={method.id}
                       style={{
-                        padding: '10px 14px',
-                        background: isSelected ? 'rgba(2, 132, 199, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                        border: isSelected ? '1.5px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.08)',
-                        borderRadius: '10px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
+                        background: method.isDefault ? 'rgba(37, 99, 235, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                        border: `1px solid ${method.isDefault ? 'rgba(37, 99, 235, 0.4)' : 'var(--border-subtle)'}`,
+                        borderRadius: '10px',
+                        padding: '12px 16px',
+                        flexWrap: 'wrap',
+                        gap: '10px'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontSize: '1.2rem' }}>{p.icon}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>
+                          {method.type === 'card' ? '💳' : (method.type === 'netbanking' ? '🏦' : '⚡')}
+                        </span>
                         <div>
-                          <div style={{ color: '#fff', fontWeight: '700', fontSize: '0.85rem' }}>{p.label}</div>
-                          <div style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Limit: ₹{p.autoDebitLimit.toLocaleString()} • Razorpay Verified</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>
+                              {method.label || method.brand}
+                            </span>
+                            {method.isDefault && (
+                              <span style={{
+                                background: 'rgba(16, 185, 129, 0.2)',
+                                color: '#34d399',
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                fontSize: '10px',
+                                fontWeight: '800'
+                              }}>
+                                ★ DEFAULT
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {method.type === 'card' && `•••• ${method.last4 || '1007'} | Exp: ${method.expiry || '12/28'} | ${method.holder || 'Nawaz Khan'}`}
+                            {method.type === 'netbanking' && `Bank Code: ${method.bank || 'SBIN'} | ${method.bankName || 'State Bank of India'}`}
+                            {method.type === 'upi' && `VPA: ${method.vpa || 'nawaz@okaxis'}`}
+                            {' • '}
+                            <span style={{ color: '#93c5fd', fontWeight: '600' }}>
+                              Auto-Debit Limit: ₹{(method.autoDebitLimit || 15000).toLocaleString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <input
-                        type="radio"
-                        checked={isSelected}
-                        onChange={() => handleMethodSelect(p)}
-                        style={{ accentColor: '#0284c7', width: '16px', height: '16px' }}
-                      />
+
+                      {/* Action Buttons */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {!method.isDefault && (
+                          <button
+                            onClick={() => handleSetDefault(method.id)}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border-subtle)',
+                              background: 'rgba(255, 255, 255, 0.06)',
+                              color: '#cbd5e1',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteMethod(method.id, method.label || method.brand)}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            color: '#f87171',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                          title="Delete payment method from PostgreSQL"
+                        >
+                          🗑️ Remove
+                        </button>
+                      </div>
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: ADD NEW CARD */}
+          {activeTab === 'add_card' && (
+            <form onSubmit={handleCreateCard} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Card Brand / Label
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Visa Platinum Debit, HDFC Millennia"
+                  value={cardBrand}
+                  onChange={e => setCardBrand(e.target.value)}
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
               </div>
 
-              {/* Add New Option Button */}
-              <button
-                type="button"
-                onClick={() => { setShowAddNew(true); setNewMethodType(activeTab === 'netbanking' ? 'netbanking' : (activeTab === 'upi' ? 'upi' : 'card')); }}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px dashed rgba(56, 189, 248, 0.4)',
-                  borderRadius: '8px',
-                  color: '#38bdf8',
-                  fontSize: '0.8rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  marginBottom: '14px'
-                }}
-              >
-                + Add Custom {activeTab === 'cards' ? 'Card' : activeTab === 'netbanking' ? 'NetBanking Bank' : 'UPI ID'} to Memory
-              </button>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Card Number (16 Digits)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 4100 2800 0000 1007"
+                  value={cardNumber}
+                  onChange={e => setCardNumber(e.target.value)}
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
 
-              <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Auto-Debit Toggle */}
-                <div style={{
-                  padding: '10px 14px',
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <div>
-                    <div style={{ color: '#34d399', fontSize: '0.82rem', fontWeight: '700' }}>
-                      ⚡ Zero-Intervention Auto-Debit Active
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>
-                      Auto-executes purchases on Razorpay within pre-auth limit
-                    </div>
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                    Expiry (MM/YY)
+                  </label>
                   <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={(e) => setEnabled(e.target.checked)}
-                    style={{ width: '18px', height: '18px', accentColor: '#10b981', cursor: 'pointer' }}
+                    type="text"
+                    placeholder="12/28"
+                    value={cardExpiry}
+                    onChange={e => setCardExpiry(e.target.value)}
+                    required
+                    className="config-input"
+                    style={{ width: '100%', boxSizing: 'border-box' }}
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div className="form-group">
-                    <label style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: '600' }}>Holder Name:</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={holder}
-                      onChange={(e) => setHolder(e.target.value)}
-                      style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: '600' }}>Auto-Debit Limit (₹):</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={autoDebitLimit}
-                      onChange={(e) => setAutoDebitLimit(e.target.value)}
-                      style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#fff', fontSize: '0.8rem', padding: '6px 10px' }}
-                    />
-                  </div>
+                <div className="form-group">
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                    Cardholder Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nawaz Khan"
+                    value={cardHolder}
+                    onChange={e => setCardHolder(e.target.value)}
+                    required
+                    className="config-input"
+                    style={{ width: '100%', boxSizing: 'border-box' }}
+                  />
                 </div>
-
-                {msg && (
-                  <div style={{ color: msg.success ? '#34d399' : '#f87171', fontSize: '0.82rem', fontWeight: '600', textAlign: 'center' }}>
-                    {msg.text}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn-checkout"
-                  style={{
-                    background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
-                    color: '#fff',
-                    padding: '10px',
-                    borderRadius: '10px',
-                    fontWeight: '700',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  {loading ? 'Saving...' : 'Set Default in Agent Memory'}
-                </button>
-              </form>
-            </div>
-          ) : (
-            <form onSubmit={handleAddNewMethod} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#38bdf8', marginBottom: '4px' }}>
-                Add New {newMethodType === 'card' ? 'Card' : newMethodType === 'netbanking' ? 'NetBanking Bank' : 'UPI ID'}
               </div>
 
               <div className="form-group">
-                <label style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                  {newMethodType === 'card' ? 'Card Brand / Label (e.g. Axis Magnus Card)' : newMethodType === 'netbanking' ? 'Bank Name (e.g. Kotak Mahindra Bank)' : 'App / Provider Name (e.g. Google Pay)'}
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Pre-Authorized Auto-Debit Spending Limit (INR ₹)
+                </label>
+                <input
+                  type="number"
+                  placeholder="25000"
+                  value={cardLimit}
+                  onChange={e => setCardLimit(e.target.value)}
+                  min="100"
+                  max="100000"
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#fff',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginTop: '6px'
+                }}
+              >
+                {loading ? 'Saving to Database...' : '💾 Save Card to PostgreSQL'}
+              </button>
+            </form>
+          )}
+
+          {/* TAB 3: ADD NEW NETBANKING */}
+          {activeTab === 'add_nb' && (
+            <form onSubmit={handleCreateNetBanking} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Select Bank
+                </label>
+                <select
+                  value={selectedBankCode}
+                  onChange={e => setSelectedBankCode(e.target.value)}
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#1e293b' }}
+                >
+                  {popularBanks.map(b => (
+                    <option key={b.code} value={b.code}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Account Holder Name
                 </label>
                 <input
                   type="text"
-                  className="form-input"
-                  value={newMethodName}
-                  onChange={(e) => setNewMethodName(e.target.value)}
-                  placeholder={newMethodType === 'card' ? 'Axis Magnus Card' : newMethodType === 'netbanking' ? 'Kotak Mahindra Bank' : 'Google Pay'}
-                  style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#fff' }}
+                  placeholder="Nawaz Khan"
+                  value={nbHolder}
+                  onChange={e => setNbHolder(e.target.value)}
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div className="form-group">
-                <label style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                  {newMethodType === 'card' ? 'Card Number (Mock tokenized)' : newMethodType === 'netbanking' ? 'Bank IFSC Code / Branch ID (e.g. KKBK)' : 'UPI VPA / ID (e.g. user@okhdfcbank)'}
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Pre-Authorized Auto-Debit Limit (INR ₹)
                 </label>
                 <input
-                  type="text"
-                  className="form-input"
-                  value={newMethodIdentifier}
-                  onChange={(e) => setNewMethodIdentifier(e.target.value)}
-                  placeholder={newMethodType === 'card' ? '4100 2800 0000 9999' : newMethodType === 'netbanking' ? 'KKBK' : 'username@okhdfcbank'}
-                  style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.15)', color: '#fff' }}
+                  type="number"
+                  placeholder="50000"
+                  value={nbLimit}
+                  onChange={e => setNbLimit(e.target.value)}
+                  min="500"
+                  max="100000"
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
                 />
               </div>
 
-              {msg && (
-                <div style={{ color: msg.success ? '#34d399' : '#f87171', fontSize: '0.82rem', fontWeight: '600', textAlign: 'center' }}>
-                  {msg.text}
-                </div>
-              )}
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#fff',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginTop: '6px'
+                }}
+              >
+                {loading ? 'Saving to Database...' : '💾 Save NetBanking Account to PostgreSQL'}
+              </button>
+            </form>
+          )}
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddNew(false)}
-                  style={{ flex: 1, padding: '9px', background: 'rgba(255, 255, 255, 0.1)', border: 'none', borderRadius: '8px', color: '#94a3b8', cursor: 'pointer', fontWeight: '600' }}
+          {/* TAB 4: ADD NEW UPI */}
+          {activeTab === 'add_upi' && (
+            <form onSubmit={handleCreateUpi} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  UPI App Provider
+                </label>
+                <select
+                  value={upiProvider}
+                  onChange={e => setUpiProvider(e.target.value)}
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#1e293b' }}
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{ flex: 2, padding: '9px', background: '#0284c7', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontWeight: '700' }}
-                >
-                  {loading ? 'Saving...' : 'Save to Agent Memory'}
-                </button>
+                  <option value="Google Pay">Google Pay (GPay)</option>
+                  <option value="PhonePe">PhonePe</option>
+                  <option value="Paytm">Paytm UPI</option>
+                  <option value="BHIM UPI">BHIM UPI</option>
+                </select>
               </div>
+
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  UPI ID / VPA
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. nawaz@okaxis or 9876543210@ybl"
+                  value={upiVpa}
+                  onChange={e => setUpiVpa(e.target.value)}
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--text-secondary)' }}>
+                  Pre-Authorized Auto-Debit Limit (INR ₹)
+                </label>
+                <input
+                  type="number"
+                  placeholder="25000"
+                  value={upiLimit}
+                  onChange={e => setUpiLimit(e.target.value)}
+                  min="500"
+                  max="50000"
+                  required
+                  className="config-input"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#fff',
+                  fontWeight: '700',
+                  fontSize: '14px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginTop: '6px'
+                }}
+              >
+                {loading ? 'Saving to Database...' : '💾 Save UPI VPA to PostgreSQL'}
+              </button>
             </form>
           )}
         </div>

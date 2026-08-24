@@ -239,8 +239,37 @@ const AuthModal = ({ isOpen, onClose, currentUser, onAuthSuccess }) => {
           </button>
         </form>
 
-        <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
-          Current Connected User: <strong>{currentUser?.email || 'nawaz@gmail.com'}</strong>
+        <div style={{
+          marginTop: '16px',
+          paddingTop: '12px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '12px',
+          color: 'var(--text-secondary)'
+        }}>
+          <div>
+            Active: <strong style={{ color: '#93c5fd' }}>{currentUser?.email || 'nawaz@gmail.com'}</strong>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem('buying_agent_token');
+              if (onAuthSuccess) onAuthSuccess(null, null);
+              setSuccessMsg('Signed out of session.');
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#f87171',
+              cursor: 'pointer',
+              fontWeight: '700',
+              fontSize: '12px'
+            }}
+          >
+            🚪 Sign Out
+          </button>
         </div>
       </div>
     </div>

@@ -290,6 +290,22 @@ async function updatePaymentMethod(email, methodId, updateData) {
 }
 
 /**
+ * Delete / Remove Payment Method
+ */
+async function deletePaymentMethod(email, methodId) {
+  const user = await getUser(email);
+  await query('DELETE FROM payment_methods WHERE user_id = $1 AND id = $2', [user.id, methodId]);
+
+  // If deleted method was default, make the first remaining method default
+  const remaining = await getPaymentMethods(email);
+  if (remaining.length > 0 && !remaining.some(m => m.isDefault)) {
+    await query('UPDATE payment_methods SET is_default = TRUE WHERE user_id = $1 AND id = $2', [user.id, remaining[0].id]);
+  }
+
+  return getPaymentMethods(email);
+}
+
+/**
  * Save Order to PostgreSQL
  */
 async function saveOrder(email, orderData) {
@@ -426,6 +442,7 @@ module.exports = {
   addPaymentMethod,
   setDefaultPaymentMethod,
   updatePaymentMethod,
+  deletePaymentMethod,
   saveOrder,
   getOrderHistory,
   getSpendingStats

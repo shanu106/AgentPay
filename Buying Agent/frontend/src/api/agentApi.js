@@ -10,12 +10,12 @@ export const verifyPayment = paymentService.verifyPayment;
 export const fetchSavedPaymentMethod = paymentService.fetchSavedPaymentMethod;
 export const updateSavedPaymentMethod = paymentService.updateSavedPaymentMethod;
 export const fetchOrderById = orderService.fetchOrderById;
-export const fetchOrders = orderService.fetchOrders;
+export const fetchOrders = userService.fetchUserOrders; // Fetches user orders from PostgreSQL
 export const fetchAuditLogs = agentService.fetchAuditLogs;
 export const fetchConfig = agentService.fetchConfig;
 export const updateApiKey = agentService.updateApiKey;
 
-// PostgreSQL User Authentication, Addresses, and Payment Methods
+// PostgreSQL User Authentication, Addresses, Payment Methods & Orders
 export const signupUser = userService.signup;
 export const loginUser = userService.login;
 export const fetchUserProfile = userService.fetchUserProfile;
@@ -26,4 +26,6 @@ export const fetchPaymentMethods = userService.fetchPaymentMethods;
 export const addPaymentMethod = userService.addPaymentMethod;
 export const setDefaultPaymentMethod = userService.setDefaultPaymentMethod;
 export const updatePaymentMethod = userService.updatePaymentMethod;
+export const deletePaymentMethod = userService.deletePaymentMethod;
+export const fetchUserOrders = userService.fetchUserOrders;
 export const fetchUserEmails = userService.fetchUserEmails;

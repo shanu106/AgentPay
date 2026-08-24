@@ -225,6 +225,29 @@ const updatePaymentMethod = async (req, res) => {
   }
 };
 
+/**
+ * Delete Payment Method
+ */
+const deletePaymentMethod = async (req, res) => {
+  try {
+    const { methodId } = req.body;
+    const email = (req.body.email || req.user?.email || activeUserEmail).toLowerCase().trim();
+    if (!methodId) {
+      return res.status(400).json({ success: false, message: 'Payment methodId is required.' });
+    }
+    const paymentMethods = await userStore.deletePaymentMethod(email, methodId);
+    const defaultMethod = await userStore.getDefaultPaymentMethod(email);
+    res.json({
+      success: true,
+      message: 'Payment method removed successfully.',
+      paymentMethods,
+      defaultMethod
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const getActiveUserEmail = () => activeUserEmail;
 
 module.exports = {
@@ -240,5 +263,6 @@ module.exports = {
   addPaymentMethod,
   setDefaultPaymentMethod,
   updatePaymentMethod,
+  deletePaymentMethod,
   getActiveUserEmail
 };

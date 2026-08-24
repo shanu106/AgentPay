@@ -7,6 +7,7 @@ import AuditLogsModal from './components/AuditLogsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import SavedPaymentModal from './components/SavedPaymentModal';
 import AuthModal from './components/AuthModal';
+import OrderHistoryModal from './components/OrderHistoryModal';
 import './App.css';
 
 const SUPPORTED_LANGUAGES = {
@@ -89,6 +90,7 @@ function App() {
 
   // Modals & User Auth State
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
@@ -419,9 +421,26 @@ function App() {
               borderColor: savedPayment.enabled ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-subtle)',
               color: savedPayment.enabled ? 'var(--accent-emerald)' : 'var(--text-secondary)'
             }}
+            title="Manage Saved Cards, NetBanking, and Auto-Debit Limits in PostgreSQL"
           >
             <span>💳</span>
             <span>{savedPayment.enabled ? `Auto-Pay: ${savedPayment.brand || savedPayment.label} ${savedPayment.last4 ? '•••• ' + savedPayment.last4 : ''}` : 'Auto-Pay: Off'}</span>
+          </button>
+
+          {/* Orders History Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsOrderHistoryOpen(true)}
+            style={{
+              background: 'rgba(16, 185, 129, 0.12)',
+              borderColor: 'rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              fontWeight: '700'
+            }}
+            title="View All Past Orders & Payment Receipts in PostgreSQL"
+          >
+            <span>📦</span>
+            <span>My Orders</span>
           </button>
 
           <button className="key-status-btn" onClick={() => setIsAuditOpen(true)}>
@@ -634,12 +653,21 @@ function App() {
         onPaymentSuccess={handlePaymentSuccess}
       />
 
-      {/* Pre-Saved Payment Details Modal */}
+      {/* Pre-Saved Payment Details Modal (Add / Remove Cards & NetBanking) */}
       <SavedPaymentModal
         isOpen={isSavedPaymentOpen}
         onClose={() => setIsSavedPaymentOpen(false)}
+        userEmail={customerEmail}
         savedPayment={savedPayment}
         onPaymentUpdated={(p) => setSavedPayment(p)}
+      />
+
+      {/* Order History Modal (All Past Orders in PostgreSQL) */}
+      <OrderHistoryModal
+        isOpen={isOrderHistoryOpen}
+        onClose={() => setIsOrderHistoryOpen(false)}
+        userEmail={customerEmail}
+        userName={customerName}
       />
 
       {/* Audit Logs Modal */}
