@@ -22,7 +22,8 @@ export const agentService = {
     customerEmail,
     autoExecutePayment,
     savedPaymentMethod,
-    merchantApiBase
+    merchantApiBase,
+    language = 'en'
   }) {
     const res = await fetch(`${API_BASE}/agent/purchase`, {
       method: 'POST',
@@ -34,7 +35,8 @@ export const agentService = {
         customerEmail,
         autoExecutePayment,
         savedPaymentMethod,
-        merchantApiBase
+        merchantApiBase,
+        language
       })
     });
     return handleResponse(res);

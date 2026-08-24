@@ -16,7 +16,8 @@ const handlePurchase = async (req, res) => {
       autoExecutePayment = true,
       savedPaymentMethod,
       merchantApiBase,
-      enableVoice = true
+      enableVoice = true,
+      language = 'en'
     } = req.body;
 
     if (!message || message.trim() === '') {
@@ -41,16 +42,18 @@ const handlePurchase = async (req, res) => {
       deliveryAddress: activeAddress,
       autoExecutePayment,
       savedPaymentMethod: defaultPm,
-      merchantApiBase
+      merchantApiBase,
+      language
     });
 
-    // Generate Spoken Voice Feedback (ElevenLabs TTS with browser fallback)
-    const spokenFeedback = voiceService.createSpokenFeedback(response);
+    // Generate Spoken Voice Feedback (ElevenLabs TTS in English or Hindi)
+    const spokenFeedback = voiceService.createSpokenFeedback(response, language);
     response.spokenFeedback = spokenFeedback;
+    response.language = language;
 
     if (enableVoice !== false) {
       try {
-        const voiceResult = await voiceService.generateSpeech({ text: spokenFeedback });
+        const voiceResult = await voiceService.generateSpeech({ text: spokenFeedback, language });
         if (voiceResult.success && voiceResult.audioUrl) {
           response.audioUrl = voiceResult.audioUrl;
           response.voiceProvider = 'elevenlabs';

@@ -790,6 +790,7 @@
           </div>
         </div>
         <div class="rzp-agent-header-actions">
+          <button class="rzp-agent-btn-icon" id="rzp-agent-lang-btn" title="Language: English (Click for हिंदी)" style="font-size:11px; font-weight:800; width:auto; padding:2px 7px; border-radius:6px; letter-spacing:0.5px;">🌐 EN</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-voice-toggle-btn" title="Voice Audio Feedback (ElevenLabs)">🔊</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-settings-btn" title="Payment & Authorization Settings">⚙️</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-close-btn" title="Close">✕</button>
@@ -1263,12 +1264,14 @@
 
   fetchMerchantProductsAndRenderNicheChips();
 
-  // Voice Agent State
+  // Voice & Language State
+  let currentLanguage = 'en'; // 'en' | 'hi'
   let isVoiceEnabled = true;
   let isListening = false;
   let currentAudio = null;
   let recognition = null;
 
+  const langBtn = document.getElementById('rzp-agent-lang-btn');
   const micBtn = document.getElementById('rzp-agent-mic-btn');
   const voiceToggleBtn = document.getElementById('rzp-agent-voice-toggle-btn');
   const voiceWaveBanner = document.getElementById('rzp-voice-wave-banner');
@@ -1279,7 +1282,7 @@
     recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = 'en-IN';
+    recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
 
     recognition.onstart = () => {
       isListening = true;
@@ -1309,6 +1312,43 @@
     };
   }
 
+  // Language Switching Handler
+  if (langBtn) {
+    langBtn.addEventListener('click', () => {
+      currentLanguage = currentLanguage === 'en' ? 'hi' : 'en';
+      const isHindi = currentLanguage === 'hi';
+      
+      langBtn.textContent = isHindi ? '🌐 HI' : '🌐 EN';
+      langBtn.title = isHindi ? 'Language: हिंदी (Hindi) - Click for English' : 'Language: English - Click for हिंदी';
+      
+      if (recognition) {
+        recognition.lang = isHindi ? 'hi-IN' : 'en-IN';
+      }
+
+      if (inputEl) {
+        inputEl.placeholder = isHindi 
+          ? 'पूछें या 🎙️ बोलकर आर्डर करें (उदा. 2 चिकन बिरयानी)...' 
+          : 'Ask or click 🎙️ mic to speak your order...';
+      }
+
+      if (voiceWaveBanner) {
+        const span = voiceWaveBanner.querySelector('span:last-child');
+        if (span) {
+          span.textContent = isHindi 
+            ? '🎙️ सुन रहे हैं... अपना ऑर्डर बोलें (जैसे: 2 चिकन बिरयानी एसबीआई नेटबैंकिंग से आर्डर करो)' 
+            : '🎙️ Listening... Speak your order (e.g. "Buy 2 chicken biryani with SBI netbanking")';
+        }
+      }
+
+      appendMessage({
+        role: 'agent',
+        text: isHindi 
+          ? '🇮🇳 **भाषा बदलकर हिंदी कर दी गई है।** अब आप हिंदी में बोलकर या लिखकर ऑर्डर कर सकते हैं।' 
+          : '🇬🇧 **Language set to English.** You can now speak or type your purchase orders in English.'
+      });
+    });
+  }
+
   function startListening() {
     if (!recognition) {
       alert('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
@@ -1320,6 +1360,9 @@
         currentAudio = null;
       }
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (recognition) {
+        recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+      }
       recognition.start();
     } catch (e) {
       console.warn('Recognition start note:', e.message);
@@ -1356,7 +1399,7 @@
   }
 
   // Play Spoken Voice Feedback (ElevenLabs TTS with browser synthesis fallback)
-  function playVoiceFeedback(spokenText, audioUrl) {
+  function playVoiceFeedback(spokenText, audioUrl, language = 'en') {
     if (!isVoiceEnabled || !spokenText) return;
 
     try {
@@ -1371,28 +1414,29 @@
         currentAudio = new Audio(audioUrl);
         currentAudio.play().catch((err) => {
           console.warn('[ElevenLabs Playback Fallback]:', err.message);
-          speakWithBrowser(spokenText);
+          speakWithBrowser(spokenText, language);
         });
       } else {
         // 2. High quality browser SpeechSynthesis fallback
-        speakWithBrowser(spokenText);
+        speakWithBrowser(spokenText, language);
       }
     } catch (err) {
       console.warn('[Voice Feedback]:', err.message);
     }
   }
 
-  function speakWithBrowser(text) {
+  function speakWithBrowser(text, language = 'en') {
     if (!window.speechSynthesis) return;
     const cleanText = text.replace(/[*_`#]/g, '').trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
-    utterance.lang = 'en-US';
+    utterance.lang = language === 'hi' || currentLanguage === 'hi' ? 'hi-IN' : 'en-US';
 
     // Pick best available natural voice if present
     const voices = window.speechSynthesis.getVoices();
-    const naturalVoice = voices.find(v => (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Karen')) && v.lang.startsWith('en'));
+    const targetLang = language === 'hi' || currentLanguage === 'hi' ? 'hi' : 'en';
+    const naturalVoice = voices.find(v => v.lang.startsWith(targetLang) && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Lekha') || v.name.includes('Samantha')));
     if (naturalVoice) utterance.voice = naturalVoice;
 
     window.speechSynthesis.speak(utterance);
@@ -1414,10 +1458,13 @@
 
     // 2. Add Live Reasoning Stream Card
     const reasoningCardId = 'rzp-reasoning-' + Date.now();
-    appendReasoningCard(reasoningCardId, `Processing request with memory & pre-authorization...`);
+    const initialReasonText = currentLanguage === 'hi' 
+      ? 'मेमोरी और प्री-ऑथराइजेशन के साथ अनुरोध प्रोसेस किया जा रहा है...' 
+      : 'Processing request with memory & pre-authorization...';
+    appendReasoningCard(reasoningCardId, initialReasonText);
 
     try {
-      // 3. Call Agent Backend Purchase Endpoint
+      // 3. Call Agent Backend Purchase Endpoint (with language setting)
       const response = await fetch(`${config.agentApi}/purchase`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1430,7 +1477,8 @@
           autoExecutePayment: savedPayment.enabled !== false,
           savedPaymentMethod: savedPayment,
           merchantApiBase: config.merchantApi,
-          enableVoice: isVoiceEnabled
+          enableVoice: isVoiceEnabled,
+          language: currentLanguage
         })
       });
 
@@ -1457,28 +1505,28 @@
 
         // 🔊 Spoken Voice Feedback on SUCCESS
         if (data.spokenFeedback) {
-          playVoiceFeedback(data.spokenFeedback, data.audioUrl);
+          playVoiceFeedback(data.spokenFeedback, data.audioUrl, currentLanguage);
         }
       } else if (data.reply) {
         appendMessage({ role: 'agent', text: data.reply });
 
         // 🔊 Spoken Voice Feedback on Conversational Query
         if (data.spokenFeedback) {
-          playVoiceFeedback(data.spokenFeedback, data.audioUrl);
+          playVoiceFeedback(data.spokenFeedback, data.audioUrl, currentLanguage);
         }
       } else if (!data.success) {
-        const errorMsg = data.message || 'Purchase could not be completed.';
-        appendMessage({ role: 'agent', text: `❌ **Purchase Request Not Completed**\n\n${errorMsg}` });
+        const errorMsg = data.message || (currentLanguage === 'hi' ? 'ऑर्डर पूरा नहीं किया जा सका।' : 'Purchase could not be completed.');
+        appendMessage({ role: 'agent', text: `❌ **${currentLanguage === 'hi' ? 'ऑर्डर अनुरोध पूरा नहीं हुआ' : 'Purchase Request Not Completed'}**\n\n${errorMsg}` });
 
         // 🔊 Spoken Voice Feedback on FAILURE / DENIAL
-        const failText = data.spokenFeedback || `Sorry, your order could not be completed. ${errorMsg}`;
-        playVoiceFeedback(failText, data.audioUrl);
+        const failText = data.spokenFeedback || (currentLanguage === 'hi' ? `क्षमा करें, आपका ऑर्डर पूरा नहीं हो सका। ${errorMsg}` : `Sorry, your order could not be completed. ${errorMsg}`);
+        playVoiceFeedback(failText, data.audioUrl, currentLanguage);
       }
 
     } catch (err) {
       const errText = `❌ Error processing purchase: ${err.message}`;
       appendMessage({ role: 'agent', text: errText });
-      playVoiceFeedback(`Sorry, an error occurred while processing your purchase.`, null);
+      playVoiceFeedback(currentLanguage === 'hi' ? `क्षमा करें, आर्डर प्रोसेस करते समय समस्या आई।` : `Sorry, an error occurred while processing your purchase.`, null, currentLanguage);
     } finally {
       isLoading = false;
       sendBtn.disabled = false;

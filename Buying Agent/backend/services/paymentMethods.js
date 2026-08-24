@@ -269,23 +269,23 @@ function resolvePaymentFromGeminiOutput(geminiPaymentStr, defaultMethod = null) 
 
   // Keyword → config mapping (order matters: most specific first)
   const mappings = [
-    { keywords: ['amazon', 'amazon pay', 'amazon icici'], config: PRE_SAVED_PAYMENT_METHODS.amazon_card },
+    { keywords: ['amazon', 'amazon pay', 'amazon icici', 'अमेज़न'], config: PRE_SAVED_PAYMENT_METHODS.amazon_card },
     { keywords: ['hdfc millennia', 'hdfc card', 'hdfc credit', 'hdfc debit'], config: PRE_SAVED_PAYMENT_METHODS.hdfc_card },
-    { keywords: ['bank of baroda', 'bob', 'baroda'], config: PRE_SAVED_PAYMENT_METHODS.bob_netbanking },
-    { keywords: ['sbi', 'state bank'], config: PRE_SAVED_PAYMENT_METHODS.sbi_netbanking },
-    { keywords: ['hdfc netbanking', 'hdfc net banking'], config: PRE_SAVED_PAYMENT_METHODS.hdfc_netbanking },
-    { keywords: ['icici'], config: PRE_SAVED_PAYMENT_METHODS.icici_netbanking },
-    { keywords: ['canara'], config: PRE_SAVED_PAYMENT_METHODS.canara_netbanking },
-    { keywords: ['kotak', 'kotak mahindra'], config: {
+    { keywords: ['bank of baroda', 'bob', 'baroda', 'बॉब', 'बैंक ऑफ बड़ौदा'], config: PRE_SAVED_PAYMENT_METHODS.bob_netbanking },
+    { keywords: ['sbi', 'state bank', 'एसबीआई', 'स्टेट बैंक'], config: PRE_SAVED_PAYMENT_METHODS.sbi_netbanking },
+    { keywords: ['hdfc netbanking', 'hdfc net banking', 'hdfc', 'एचडीएफसी'], config: PRE_SAVED_PAYMENT_METHODS.hdfc_netbanking },
+    { keywords: ['icici', 'आईसीआईसीआई'], config: PRE_SAVED_PAYMENT_METHODS.icici_netbanking },
+    { keywords: ['canara', 'केनरा'], config: PRE_SAVED_PAYMENT_METHODS.canara_netbanking },
+    { keywords: ['kotak', 'kotak mahindra', 'कोटक'], config: {
       id: 'pm_kotak_nb', type: 'netbanking', method: 'netbanking', bank: 'KKBK',
       bankName: 'Kotak Mahindra Bank', holder: 'User', label: 'Kotak Mahindra Bank NetBanking', autoDebitLimit: 50000
     }},
-    { keywords: ['axis', 'axis bank'], config: {
+    { keywords: ['axis', 'axis bank', 'एक्सिस'], config: {
       id: 'pm_axis_nb', type: 'netbanking', method: 'netbanking', bank: 'UTIB',
       bankName: 'Axis Bank', holder: 'User', label: 'Axis Bank NetBanking', autoDebitLimit: 50000
     }},
-    { keywords: ['gpay', 'google pay', 'phonepe', 'paytm', 'upi'], config: PRE_SAVED_PAYMENT_METHODS.upi },
-    { keywords: ['visa', 'debit card', 'credit card', 'card'], config: PRE_SAVED_PAYMENT_METHODS.default_visa },
+    { keywords: ['gpay', 'google pay', 'phonepe', 'paytm', 'upi', 'यूपीआई', 'गूगल पे', 'फोनपे', 'पेटीएम'], config: PRE_SAVED_PAYMENT_METHODS.upi },
+    { keywords: ['visa', 'debit card', 'credit card', 'card', 'कार्ड', 'डेबिट कार्ड', 'क्रेडिट कार्ड'], config: PRE_SAVED_PAYMENT_METHODS.default_visa },
   ];
 
   for (const { keywords, config } of mappings) {
@@ -293,17 +293,17 @@ function resolvePaymentFromGeminiOutput(geminiPaymentStr, defaultMethod = null) 
       return {
         ...config,
         matchedFromPrompt: true,
-        matchReason: `Gemini identified: "${geminiPaymentStr}"`
+        matchReason: `Gemini/Keyword identified: "${geminiPaymentStr}"`
       };
     }
   }
 
   // Generic netbanking fallback
-  if (text.includes('netbanking') || text.includes('net banking')) {
+  if (text.includes('netbanking') || text.includes('net banking') || text.includes('नेटबैंकिंग') || text.includes('नेट बैंकिंग')) {
     return {
       ...PRE_SAVED_PAYMENT_METHODS.bob_netbanking,
       matchedFromPrompt: true,
-      matchReason: `Gemini identified netbanking (defaulting to Bank of Baroda): "${geminiPaymentStr}"`
+      matchReason: `Identified netbanking (defaulting to Bank of Baroda): "${geminiPaymentStr}"`
     };
   }
 

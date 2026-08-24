@@ -200,36 +200,60 @@ const handleConversationalAndGuardrailQueries = async (message, user, sessionCon
 const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   const text = message.toLowerCase();
   
+  // Unicode-safe normalization of Hindi / Hinglish terms to English
+  let normalizedText = text
+    .replace(/एक/g, '1')
+    .replace(/दो/g, '2')
+    .replace(/तीन/g, '3')
+    .replace(/चार/g, '4')
+    .replace(/पांच/g, '5')
+    .replace(/चिकन बिरयानी/g, 'chicken biryani')
+    .replace(/पनीर बटर मसाला/g, 'paneer butter masala')
+    .replace(/पनीर/g, 'paneer')
+    .replace(/माउस/g, 'mouse')
+    .replace(/कीबोर्ड/g, 'keyboard')
+    .replace(/एसबीआई|स्टेट बैंक/g, 'sbi')
+    .replace(/बॉब|बैंक ऑफ बड़ौदा/g, 'bob')
+    .replace(/एचडीएफसी/g, 'hdfc')
+    .replace(/आईसीआईसीआई/g, 'icici')
+    .replace(/एक्सिस/g, 'axis')
+    .replace(/कोटक/g, 'kotak')
+    .replace(/नेटबैंकिंग|नेट बैंकिंग/g, 'netbanking')
+    .replace(/यूपीआई|गूगल पे|फोनपे/g, 'upi')
+    .replace(/कार्ड|क्रेडिट कार्ड|डेबिट कार्ड/g, 'card')
+    .replace(/(?:आर्डर करो|आर्डर करें|ऑर्डर करो|ऑर्डर करें|खरीदो|खरीदें|मंगवाओ|भेजो)/g, 'buy')
+    .replace(/(?:भुगतान|पेमेंट|पे करो|पे)/g, 'pay')
+    .replace(/(?:और|से|का|के|की|में|को|पर)/g, ' ');
+
   // 1. Extract budget / spending limit
   let maxPrice = defaultLimit;
   let hasExplicitBudget = false;
   
-  const priceMatches = text.match(/(?:under|below|up to|max|upto|within|budget of|price of|price upto|price up to|of price upto|of price up to|worth upto|worth up to|worth|for|<=|<)\s*(?:₹|rs\.?|inr)?\s*([\d,]+)/i) ||
-                       text.match(/(?:₹|rs\.?|inr)\s*([\d,]+)/i);
+  const priceMatches = normalizedText.match(/(?:under|below|up to|max|upto|within|budget of|price of|price upto|price up to|of price upto|of price up to|worth upto|worth up to|worth|for|<=|<)\s*(?:₹|rs\.?|inr)?\s*([\d,]+)/i) ||
+                       normalizedText.match(/(?:₹|rs\.?|inr)\s*([\d,]+)/i);
   if (priceMatches && priceMatches[1]) {
     maxPrice = parseInt(priceMatches[1].replace(/,/g, ''), 10);
     hasExplicitBudget = true;
   }
 
   // 2. Clean conversational commentary & payment clauses
-  let cleaned = text
+  let cleaned = normalizedText
     .replace(/^(?:i\s+want\s+to\s+|can\s+you\s+|pls\s+|please\s+|plz\s+|help\s+me\s+)?(?:buy|bue|by|bay|order|purchase|get|want|find|give|deliver|send)\s+(?:me\s+)?(?:a\s+|an\s+|to\s+)?/gi, '')
-    // Strip payment clauses: "and make payment using ...", "and pay using ...", "from axis bank netbanking", "using sbi", etc.
+    .replace(/\s+(sbi|bob|hdfc|icici|axis|kotak|canara|netbanking|net\s+banking|upi|gpay|phonepe|paytm|card|visa|mastercard).*$/gi, '')
     .replace(/\s+(and\s+)?(make\s+)?(payment|pay|paying|paid)\s+(using|with|via|by|through|of|on|from)\s+.*$/gi, '')
     .replace(/\s+(and\s+)?(using|with|via|through|by|from|on)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
     .replace(/\s+(and\s+)?(from)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
     .replace(/\s+(and\s+)?(deliver|deliver\s+to|send\s+to|address)\s+(to\s+)?(home|office|work|bangalore|bengaluru|flat|house).*$/gi, '')
     .replace(/\s+(for the prompt|then total|multiple product|when user|fix the issue|total should be|asking for|but receipt got|order autonomously).*$/gi, '')
     .replace(/\s+(of\s+price|at\s+price|price|budget|worth|under|below|up to|upto|for)\s*(?:₹|rs\.?|inr)?\s*[\d,]+.*$/gi, '')
-    // Strip conversational adverbs that are not product names
-    .replace(/\b(fast|quickly|asap|urgent|urgently|now|instantly|please|pls|plz)\b/gi, '')
+    .replace(/(?:buy|order|purchase|get|pay|fast|quickly|asap|urgent|urgently|now|instantly|please|pls|plz|जल्दी|तुरंत|कृपया)/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // 3. Detect Catalog-Wide / All-Items intent (e.g., "buy each item as single quantity from the store", "buy each item from La Pino'z Pizza of 2 quantity")
-  const isCatalogWide = /\b(each|all|every)\s+(?:single\s+)?(?:item|items|product|products|dish|dishes|food|everything|menu|course|courses)\b/i.test(text) ||
-                        /\b(one\s+of\s+each|one\s+of\s+everything|whole\s+menu|entire\s+store|from\s+the\s+store|every\s+item)\b/i.test(text) ||
-                        /\b(all\s+the\s+dishes|all\s+dishes|all\s+items|everything\s+in\s+the\s+store)\b/i.test(text);
+  // 3. Detect Catalog-Wide / All-Items intent
+  const isCatalogWide = /\b(each|all|every|sab|saare)\s+(?:single\s+)?(?:item|items|product|products|dish|dishes|food|everything|menu|course|courses)\b/i.test(normalizedText) ||
+                        /\b(one\s+of\s+each|one\s+of\s+everything|whole\s+menu|entire\s+store|from\s+the\s+store|every\s+item)\b/i.test(normalizedText) ||
+                        /\b(all\s+the\s+dishes|all\s+dishes|all\s+items|everything\s+in\s+the\s+store)\b/i.test(normalizedText);
 
   if (isCatalogWide) {
     // Check if user specified a specific shop, restaurant, or brand
@@ -380,7 +404,8 @@ const processPurchaseRequest = async ({
   deliveryAddress = null,
   autoExecutePayment = true,
   savedPaymentMethod = { type: 'card', last4: '1007', brand: 'Visa', autoDebitLimit: 15000 },
-  merchantApiBase
+  merchantApiBase,
+  language = 'en'
 }) => {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
   const targetEmail = (userEmail || customerEmail || 'nawaz@gmail.com').toLowerCase().trim();
@@ -451,34 +476,43 @@ const processPurchaseRequest = async ({
   if (isGeminiAvailable) {
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      // Try gemini-3.6-flash first, fallback to available model
+      let geminiModel;
+      try {
+        geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+      } catch {
+        geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      }
 
       const geminiPrompt = `You are a Shopping Assistant AI. Your job is to understand the user's purchase request and extract structured intent.
 
 CRITICAL RULES:
-1. **Query Correction & Expansion**: The user may use informal language, abbreviations, or conversational filler words. You MUST extract ONLY the actual product names.
-   - "buy a mouse fast from axis bank netbanking" → product is "mouse", NOT "mouse fast" (fast is an adverb, not part of the product)
-   - "buy me chicken biryani and pay using bob netbanking" → product is "chicken biryani"  
-   - "get me a good keyboard quickly" → product is "keyboard"
-   - "order 2 paneer butter masala asap" → product is "paneer butter masala", quantity is 2
-   - "buy ai and machine learning course" → product is "AI and Machine Learning" (compound product name, keep together)
-   - "buy chilli paneer dry" → product is "chilli paneer dry"
+1. **Multilingual Translation & Query Normalization (Hindi / English / Hinglish)**:
+   - If the user prompt is in **Hindi** (Devanagari script e.g. "दो चिकन बिरयानी आर्डर करो और एसबीआई नेटबैंकिंग से पे करो") or **Hinglish** (e.g. "2 chicken biryani mangwa do sbi netbanking se"):
+     You MUST translate all product names, items, quantities, and instructions into clean standard **English** so the store catalog can find the items in English.
+     - "दो चिकन बिरयानी" → items: [{ query: "chicken biryani", quantity: 2 }]
+     - "एक वायरलेस माउस" → items: [{ query: "wireless mouse", quantity: 1 }]
+     - "पनीर बटर मसाला और 2 नान" → items: [{ query: "paneer butter masala", quantity: 1 }, { query: "naan", quantity: 2 }]
+   - If the user prompt is in **English**, extract ONLY the actual product names without conversational filler words.
+     - "buy a mouse fast from axis bank netbanking" → product is "mouse", NOT "mouse fast"
+     - "buy me chicken biryani and pay using bob netbanking" → product is "chicken biryani"
+     - "order 2 paneer butter masala asap" → product is "paneer butter masala", quantity is 2
 
-2. **Payment Detection**: Identify any payment method mentioned. Common patterns:
-   - "using/with/from/via [bank] netbanking" → netbanking with that bank
-   - "pay with/using [card brand]" → card payment  
-   - "using upi / gpay / phonepe" → UPI payment
+2. **Payment Detection**: Identify any payment method mentioned in English or Hindi. Common patterns:
+   - "using/with/from/via [bank] netbanking" or "[bank] नेटबैंकिंग" → netbanking with that bank (e.g. "SBI NetBanking", "Bank of Baroda NetBanking", "Axis Bank NetBanking")
+   - "pay with/using [card brand]" or "कार्ड से पे करो" → card payment  
+   - "using upi / gpay / phonepe" or "यूपीआई से" → UPI payment
    - If no payment method is mentioned, set paymentMethod to null
 
-3. **Filler Words to IGNORE in product names**: fast, quickly, asap, urgent, now, instantly, please, pls, plz, immediately
-4. **Payment keywords to NEVER include in product names**: netbanking, upi, card, credit card, debit card, bank, payment, pay, visa, mastercard, gpay, phonepe, paytm
-5. **Delivery keywords to NEVER include**: deliver, home, office, address, bangalore, bengaluru
+3. **Filler Words to IGNORE in product names**: fast, quickly, asap, urgent, now, instantly, please, pls, plz, immediately, जल्दी, तुरंत, कृपया
+4. **Payment keywords to NEVER include in product names**: netbanking, upi, card, credit card, debit card, bank, payment, pay, visa, mastercard, gpay, phonepe, paytm, नेटबैंकिंग, यूपीआई, कार्ड, बैंक, भुगतान
+5. **Delivery keywords to NEVER include**: deliver, home, office, address, bangalore, bengaluru, घर, ऑफिस, पता
 
 Extract the following JSON structure:
 {
   "isCatalogWide": boolean (true if "each item", "all items", "every item", "whole menu"),
   "targetShop": string or null (specific restaurant/shop/brand if mentioned),
-  "items": [{ "query": string (corrected/expanded product name ONLY), "quantity": number }],
+  "items": [{ "query": string (English product name ONLY), "quantity": number }],
   "quantityPerItem": number (for catalog-wide orders, default 1),
   "budget": number or null (price limit if mentioned),
   "paymentMethod": string or null (e.g. "Bank of Baroda NetBanking", "Kotak Mahindra Bank NetBanking", "Axis Bank NetBanking", "SBI NetBanking", "HDFC NetBanking", "ICICI NetBanking", "Canara Bank NetBanking", "Visa Card", "Amazon Pay ICICI Card", "HDFC Millennia Card", "UPI", "Google Pay UPI", "PhonePe UPI", etc.)
