@@ -1,6 +1,7 @@
+const { razorpay } = require('../config/razorpay');
 const { courses, orders } = require('../data/courses.data');
 
-const createMerchantOrder = (req, res) => {
+const createMerchantOrder = async (req, res) => {
   const { productId, items, quantity = 1, deliveryAddress, customerName, customerEmail } = req.body;
 
   let totalAmount = 0;
@@ -42,9 +43,26 @@ const createMerchantOrder = (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid items for order' });
   }
 
+  let rzpOrderId = null;
+  try {
+    const rzpOrder = await razorpay.orders.create({
+      amount: Math.round(totalAmount * 100),
+      currency: 'INR',
+      receipt: `crs_agent_${Date.now().toString().slice(-8)}`,
+      notes: {
+        customerName: customerName || 'Learner',
+        customerEmail: customerEmail || 'learner@example.com'
+      }
+    });
+    rzpOrderId = rzpOrder.id;
+  } catch (err) {
+    console.warn('Razorpay order creation warning:', err.message);
+  }
+
   const orderId = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
   const orderRecord = {
     orderId,
+    razorpayOrderId: rzpOrderId || orderId,
     items: orderedItems,
     productTitle: orderedItems.map(i => `${i.quantity}x ${i.title}`).join(', '),
     amount: totalAmount,
@@ -58,10 +76,12 @@ const createMerchantOrder = (req, res) => {
   };
 
   orders[orderId] = orderRecord;
+  if (rzpOrderId) orders[rzpOrderId] = orderRecord;
 
   res.json({
     success: true,
     orderId,
+    razorpayOrderId: rzpOrderId || orderId,
     amount: totalAmount,
     currency: 'INR',
     quantity: orderRecord.quantity,
