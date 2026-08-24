@@ -14,6 +14,16 @@ export const fetchOrders = orderService.fetchOrders;
 export const fetchAuditLogs = agentService.fetchAuditLogs;
 export const fetchConfig = agentService.fetchConfig;
 export const updateApiKey = agentService.updateApiKey;
+
+// PostgreSQL User Authentication, Addresses, and Payment Methods
+export const signupUser = userService.signup;
+export const loginUser = userService.login;
 export const fetchUserProfile = userService.fetchUserProfile;
 export const fetchUserAddresses = userService.fetchUserAddresses;
+export const addUserAddress = userService.addAddress;
+export const setDefaultUserAddress = userService.setDefaultAddress;
+export const fetchPaymentMethods = userService.fetchPaymentMethods;
+export const addPaymentMethod = userService.addPaymentMethod;
+export const setDefaultPaymentMethod = userService.setDefaultPaymentMethod;
+export const updatePaymentMethod = userService.updatePaymentMethod;
 export const fetchUserEmails = userService.fetchUserEmails;

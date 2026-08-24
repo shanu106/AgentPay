@@ -29,6 +29,10 @@ app.get('/api/config', agentController.getConfig);
 app.post('/api/config/key', agentController.updateConfigKey);
 app.get('/api/health', agentController.getHealth);
 
+// Initialize PostgreSQL database schema & seeds
+const { initDatabase } = require('./db/index');
+initDatabase().catch(err => console.error('[DB Boot Error]:', err.message));
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`

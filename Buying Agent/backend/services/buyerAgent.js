@@ -10,7 +10,7 @@ Your objective is to help the user find, evaluate, authorize, purchase, and pay 
 /**
  * Helper: Detect Memory & Order Recall queries (e.g. "what was my last order?", "how much have I spent?")
  */
-const checkMemoryRecallQuery = (text, userEmail) => {
+const checkMemoryRecallQuery = async (text, userEmail) => {
   const t = text.toLowerCase().trim();
   
   const isLastOrderQuery = /\b(what was my last order|what did i order (last|previously|earlier)|show my last order|view last order|last order)\b/i.test(t);
@@ -19,11 +19,11 @@ const checkMemoryRecallQuery = (text, userEmail) => {
   const isAddressQuery = /\b(what is my (delivery )?address|where do you deliver|my saved address|saved addresses|where did you deliver)\b/i.test(t);
 
   if (isLastOrderQuery || isOrderHistoryQuery || isSpendingQuery || isAddressQuery) {
-    const user = userStore.getUser(userEmail);
-    const lastOrder = userStore.getLastOrder(userEmail);
-    const history = userStore.getOrderHistory(userEmail);
-    const stats = userStore.getSpendingStats(userEmail);
-    const address = userStore.getActiveAddress(userEmail);
+    const user = await userStore.getUser(userEmail);
+    const history = await userStore.getOrderHistory(userEmail);
+    const lastOrder = history[0] || null;
+    const stats = await userStore.getSpendingStats(userEmail);
+    const address = await userStore.getActiveAddress(userEmail);
 
     if (isAddressQuery) {
       return {
@@ -409,11 +409,11 @@ const processPurchaseRequest = async ({
 }) => {
   const apiKey = customApiKey || process.env.GEMINI_API_KEY;
   const targetEmail = (userEmail || customerEmail || 'nawaz@gmail.com').toLowerCase().trim();
-  const user = userStore.getUser(targetEmail);
-  const activeAddress = deliveryAddress || userStore.getActiveAddress(targetEmail, message);
+  const user = await userStore.getUser(targetEmail);
+  const activeAddress = deliveryAddress || (await userStore.getActiveAddress(targetEmail, message));
 
   // 0. Intercept conversational memory & history queries
-  const memoryCheck = checkMemoryRecallQuery(message, targetEmail);
+  const memoryCheck = await checkMemoryRecallQuery(message, targetEmail);
   if (memoryCheck.isMemoryQuery) {
     return {
       success: true,
@@ -897,9 +897,9 @@ const runSimulatedBuyerAgent = async ({
       status: 'completed'
     });
 
-    // Save to Persistent User Order Memory
+    // Save to Persistent User Order in PostgreSQL
     try {
-      userStore.saveOrder(sessionContext.customerEmail, {
+      await userStore.saveOrder(sessionContext.customerEmail, {
         orderId: orderResult.orderId,
         razorpayOrderId: paymentData.razorpayOrderId,
         paymentId: verificationResult.paymentId,
@@ -918,7 +918,7 @@ const runSimulatedBuyerAgent = async ({
         paymentMethod: activeMethod
       });
     } catch (memErr) {
-      console.warn('User memory save warning:', memErr.message);
+      console.warn('PostgreSQL order save warning:', memErr.message);
     }
 
     // Dispatch Confirmation Email Receipt

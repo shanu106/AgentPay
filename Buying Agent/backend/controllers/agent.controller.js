@@ -29,9 +29,9 @@ const handlePurchase = async (req, res) => {
 
     const activeUserEmail = getActiveUserEmail();
     const targetEmail = (userEmail || customerEmail || activeUserEmail).toLowerCase().trim();
-    const user = userStore.getUser(targetEmail);
-    const activeAddress = userStore.getActiveAddress(targetEmail, message);
-    const defaultPm = savedPaymentMethod || userStore.getDefaultPaymentMethod(targetEmail);
+    const user = await userStore.getUser(targetEmail);
+    const activeAddress = await userStore.getActiveAddress(targetEmail, message);
+    const defaultPm = savedPaymentMethod || (await userStore.getDefaultPaymentMethod(targetEmail));
 
     const response = await processPurchaseRequest({
       message,

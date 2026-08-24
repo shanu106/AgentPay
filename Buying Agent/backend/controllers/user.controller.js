@@ -3,111 +3,235 @@ const emailService = require('../services/email.service');
 
 let activeUserEmail = 'nawaz@gmail.com';
 
-const loginUser = (req, res) => {
-  const { email } = req.body;
-  if (!email || email.trim() === '') {
-    return res.status(400).json({ success: false, message: 'Email / Gmail is required.' });
+/**
+ * User Signup / Register
+ */
+const signupUser = async (req, res) => {
+  try {
+    const { name, email, password, phone } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await userStore.registerUser({
+      name: name || cleanEmail.split('@')[0],
+      email: cleanEmail,
+      password: password || 'password123',
+      phone
+    });
+
+    activeUserEmail = cleanEmail;
+    const stats = await userStore.getSpendingStats(cleanEmail);
+
+    res.json({
+      success: true,
+      message: `Account created successfully for ${result.user.name}`,
+      user: result.user,
+      token: result.token,
+      stats
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
-  const cleanEmail = email.toLowerCase().trim();
-  activeUserEmail = cleanEmail;
-  const user = userStore.getUser(cleanEmail);
-  const stats = userStore.getSpendingStats(cleanEmail);
-  res.json({
-    success: true,
-    message: `Logged in successfully as ${user.name} (${cleanEmail})`,
-    user,
-    stats
-  });
 };
 
-const getUserProfile = (req, res) => {
-  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
-  const user = userStore.getUser(email);
-  const stats = userStore.getSpendingStats(email);
-  res.json({
-    success: true,
-    user,
-    stats
-  });
+/**
+ * User Login
+ */
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || email.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Email / Gmail is required.' });
+    }
+    const cleanEmail = email.toLowerCase().trim();
+    activeUserEmail = cleanEmail;
+
+    const result = await userStore.authenticateUser({
+      email: cleanEmail,
+      password
+    });
+    const stats = await userStore.getSpendingStats(cleanEmail);
+
+    res.json({
+      success: true,
+      message: `Logged in successfully as ${result.user.name} (${cleanEmail})`,
+      user: result.user,
+      token: result.token,
+      stats
+    });
+  } catch (err) {
+    res.status(401).json({ success: false, message: err.message });
+  }
 };
 
-const addAddress = (req, res) => {
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const newAddr = userStore.addAddress(email, req.body);
-  res.json({ success: true, message: 'Address added successfully', address: newAddr });
+/**
+ * Get User Profile
+ */
+const getUserProfile = async (req, res) => {
+  try {
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const user = await userStore.getUser(email);
+    const stats = await userStore.getSpendingStats(email);
+    res.json({
+      success: true,
+      user,
+      stats
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const setDefaultAddress = (req, res) => {
-  const { addressId } = req.body;
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const addresses = userStore.setDefaultAddress(email, addressId);
-  res.json({ success: true, message: 'Default address updated', addresses });
+/**
+ * Get Addresses
+ */
+const getAddresses = async (req, res) => {
+  try {
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const addresses = await userStore.getAddresses(email);
+    res.json({ success: true, count: addresses.length, addresses });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const getUserOrders = (req, res) => {
-  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
-  const orders = userStore.getOrderHistory(email);
-  res.json({ success: true, count: orders.length, orders });
+/**
+ * Add Address
+ */
+const addAddress = async (req, res) => {
+  try {
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const newAddr = await userStore.addAddress(email, req.body);
+    const addresses = await userStore.getAddresses(email);
+    res.json({ success: true, message: 'Address added successfully', address: newAddr, addresses });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
+/**
+ * Set Default Address
+ */
+const setDefaultAddress = async (req, res) => {
+  try {
+    const { addressId } = req.body;
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const addresses = await userStore.setDefaultAddress(email, addressId);
+    res.json({ success: true, message: 'Default address updated', addresses });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Get User Orders
+ */
+const getUserOrders = async (req, res) => {
+  try {
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const orders = await userStore.getOrderHistory(email);
+    res.json({ success: true, count: orders.length, orders });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Get User Confirmation Emails
+ */
 const getUserEmails = (req, res) => {
   const email = (req.query.email || activeUserEmail).toLowerCase().trim();
   const emails = emailService.getSentEmails(email);
   res.json({ success: true, count: emails.length, emails });
 };
 
-const getPaymentMethods = (req, res) => {
-  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
-  const paymentMethods = userStore.getPaymentMethods(email);
-  const defaultMethod = userStore.getDefaultPaymentMethod(email);
-  res.json({
-    success: true,
-    count: paymentMethods.length,
-    paymentMethods,
-    defaultMethod
-  });
+/**
+ * Get Payment Methods
+ */
+const getPaymentMethods = async (req, res) => {
+  try {
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const paymentMethods = await userStore.getPaymentMethods(email);
+    const defaultMethod = await userStore.getDefaultPaymentMethod(email);
+    res.json({
+      success: true,
+      count: paymentMethods.length,
+      paymentMethods,
+      defaultMethod
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const addPaymentMethod = (req, res) => {
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const newMethod = userStore.addPaymentMethod(email, req.body);
-  res.json({
-    success: true,
-    message: 'Payment method stored in agent memory successfully',
-    paymentMethod: newMethod,
-    paymentMethods: userStore.getPaymentMethods(email)
-  });
+/**
+ * Add Payment Method
+ */
+const addPaymentMethod = async (req, res) => {
+  try {
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const newMethod = await userStore.addPaymentMethod(email, req.body);
+    const paymentMethods = await userStore.getPaymentMethods(email);
+    res.json({
+      success: true,
+      message: 'Payment method stored in database successfully',
+      paymentMethod: newMethod,
+      paymentMethods
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const setDefaultPaymentMethod = (req, res) => {
-  const { methodId } = req.body;
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const defaultMethod = userStore.setDefaultPaymentMethod(email, methodId);
-  res.json({
-    success: true,
-    paymentMethod: defaultMethod,
-    paymentMethods: userStore.getPaymentMethods(email),
-    message: `Default payment method set to ${defaultMethod.label || defaultMethod.brand}`
-  });
+/**
+ * Set Default Payment Method
+ */
+const setDefaultPaymentMethod = async (req, res) => {
+  try {
+    const { methodId } = req.body;
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const defaultMethod = await userStore.setDefaultPaymentMethod(email, methodId);
+    const paymentMethods = await userStore.getPaymentMethods(email);
+    res.json({
+      success: true,
+      paymentMethod: defaultMethod,
+      paymentMethods,
+      message: `Default payment method set to ${defaultMethod?.label || defaultMethod?.brand}`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const updatePaymentMethod = (req, res) => {
-  const { methodId, ...updateData } = req.body;
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const updated = userStore.updatePaymentMethod(email, methodId, updateData);
-  res.json({
-    success: true,
-    message: 'Payment method updated in agent memory',
-    paymentMethod: updated,
-    paymentMethods: userStore.getPaymentMethods(email)
-  });
+/**
+ * Update Payment Method
+ */
+const updatePaymentMethod = async (req, res) => {
+  try {
+    const { methodId, ...updateData } = req.body;
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const updated = await userStore.updatePaymentMethod(email, methodId, updateData);
+    const paymentMethods = await userStore.getPaymentMethods(email);
+    res.json({
+      success: true,
+      message: 'Payment method updated in database',
+      paymentMethod: updated,
+      paymentMethods
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 const getActiveUserEmail = () => activeUserEmail;
 
 module.exports = {
+  signupUser,
   loginUser,
   getUserProfile,
+  getAddresses,
   addAddress,
   setDefaultAddress,
   getUserOrders,

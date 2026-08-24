@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const merchantService = require('../services/merchant.service');
 const AuthorizationService = require('../services/authorization.service');
+const { query } = require('../db/index');
 
 // In-memory order tracking on Buyer Agent side
 const buyerOrders = {};
@@ -14,6 +15,15 @@ const logAudit = (type, details) => {
     timestamp: new Date().toISOString()
   };
   auditLogs.push(entry);
+
+  // Persist to PostgreSQL in background
+  query(`
+    INSERT INTO audit_logs (id, action_type, details)
+    VALUES ($1, $2, $3)
+  `, [entry.id, type, JSON.stringify(details || {})]).catch(err => {
+    console.warn('PostgreSQL audit log save warning:', err.message);
+  });
+
   return entry;
 };
 

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { submitPurchaseRequest, fetchConfig, fetchSavedPaymentMethod } from './api/agentApi';
+import React, { useState, useEffect, useRef } from 'react';
+import { submitPurchaseRequest, fetchConfig, fetchSavedPaymentMethod, fetchUserProfile } from './api/agentApi';
 import AgentActivityPanel from './components/AgentActivityPanel';
 import RazorpayModal from './components/RazorpayModal';
 import OrderConfirmationView from './components/OrderConfirmationView';
 import AuditLogsModal from './components/AuditLogsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import SavedPaymentModal from './components/SavedPaymentModal';
+import AuthModal from './components/AuthModal';
 import './App.css';
 
 const SUPPORTED_LANGUAGES = {
@@ -86,7 +87,9 @@ function App() {
   const [paymentData, setPaymentData] = useState(null);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
 
-  // Modals
+  // Modals & User Auth State
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
   const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isApiKeyOpen, setIsApiKeyOpen] = useState(false);
@@ -263,8 +266,36 @@ function App() {
 
   useEffect(() => {
     loadConfig();
-    loadSavedPayment();
+    loadUserProfile('nawaz@gmail.com');
   }, []);
+
+  const loadUserProfile = async (email = 'nawaz@gmail.com') => {
+    try {
+      const data = await fetchUserProfile(email);
+      if (data.user) {
+        setUserProfile(data.user);
+        setCustomerName(data.user.name || 'Nawaz Khan');
+        setCustomerEmail(data.user.email || 'nawaz@gmail.com');
+        if (data.user.defaultPaymentMethod) {
+          setSavedPayment(data.user.defaultPaymentMethod);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load PostgreSQL user profile:', err);
+      loadSavedPayment();
+    }
+  };
+
+  const handleAuthSuccess = (user, token) => {
+    if (user) {
+      setUserProfile(user);
+      setCustomerName(user.name || 'Nawaz Khan');
+      setCustomerEmail(user.email || 'nawaz@gmail.com');
+      if (user.defaultPaymentMethod) {
+        setSavedPayment(user.defaultPaymentMethod);
+      }
+    }
+  };
 
   const loadConfig = async () => {
     try {
@@ -322,11 +353,27 @@ function App() {
           <div className="brand-logo-icon">🤖</div>
           <div className="brand-info">
             <h1>AI Shopping Buyer Agent</h1>
-            <span>Autonomous Purchase • Pre-Authorized Auto-Debit • Razorpay Test Mode</span>
+            <span>Autonomous Purchase • Pre-Authorized Auto-Debit • PostgreSQL DB</span>
           </div>
         </div>
 
         <div className="header-actions">
+          {/* User Account / PostgreSQL Auth Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsAuthOpen(true)}
+            style={{
+              background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(2, 132, 199, 0.12))',
+              borderColor: 'rgba(37, 99, 235, 0.45)',
+              color: '#93c5fd',
+              fontWeight: '700'
+            }}
+            title="User Account & PostgreSQL Database Login / Signup"
+          >
+            <span>👤</span>
+            <span>{userProfile?.name ? `${userProfile.name} (${userProfile.email.split('@')[0]})` : 'PostgreSQL User'}</span>
+          </button>
+
           {/* Language Switcher (English / Hindi) */}
           <button 
             className="key-status-btn"
@@ -374,7 +421,7 @@ function App() {
             }}
           >
             <span>💳</span>
-            <span>{savedPayment.enabled ? `Auto-Pay: ${savedPayment.brand} •••• ${savedPayment.last4}` : 'Auto-Pay: Off'}</span>
+            <span>{savedPayment.enabled ? `Auto-Pay: ${savedPayment.brand || savedPayment.label} ${savedPayment.last4 ? '•••• ' + savedPayment.last4 : ''}` : 'Auto-Pay: Off'}</span>
           </button>
 
           <button className="key-status-btn" onClick={() => setIsAuditOpen(true)}>
@@ -570,6 +617,14 @@ function App() {
           />
         </div>
       </main>
+
+      {/* User Auth Modal (PostgreSQL Login / Signup) */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        currentUser={userProfile || { name: customerName, email: customerEmail }}
+        onAuthSuccess={handleAuthSuccess}
+      />
 
       {/* Razorpay Test Modal (Fallback if manual checkout requested) */}
       <RazorpayModal
