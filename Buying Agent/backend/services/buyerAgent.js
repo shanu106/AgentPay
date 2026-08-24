@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { toolDeclarations, executeTool } = require('../tools/index');
-const { resolvePaymentMethod } = require('./paymentMethods');
+const { resolvePaymentMethod, resolvePaymentFromGeminiOutput } = require('./paymentMethods');
 const userStore = require('./userStore.service');
 const emailService = require('./email.service');
 
@@ -214,12 +214,15 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   // 2. Clean conversational commentary & payment clauses
   let cleaned = text
     .replace(/^(?:i\s+want\s+to\s+|can\s+you\s+|pls\s+|please\s+|plz\s+|help\s+me\s+)?(?:buy|bue|by|bay|order|purchase|get|want|find|give|deliver|send)\s+(?:me\s+)?(?:a\s+|an\s+|to\s+)?/gi, '')
-    // Strip payment clauses: "and make payment using ...", "and pay using ...", "using bank of baroda ...", etc.
-    .replace(/\s+(and\s+)?(make\s+)?(payment|pay|paying|paid)\s+(using|with|via|by|through|of|on)\s+.*$/gi, '')
-    .replace(/\s+(and\s+)?(using|with|via|through|by)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
+    // Strip payment clauses: "and make payment using ...", "and pay using ...", "from axis bank netbanking", "using sbi", etc.
+    .replace(/\s+(and\s+)?(make\s+)?(payment|pay|paying|paid)\s+(using|with|via|by|through|of|on|from)\s+.*$/gi, '')
+    .replace(/\s+(and\s+)?(using|with|via|through|by|from|on)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
+    .replace(/\s+(and\s+)?(from)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
     .replace(/\s+(and\s+)?(deliver|deliver\s+to|send\s+to|address)\s+(to\s+)?(home|office|work|bangalore|bengaluru|flat|house).*$/gi, '')
     .replace(/\s+(for the prompt|then total|multiple product|when user|fix the issue|total should be|asking for|but receipt got|order autonomously).*$/gi, '')
     .replace(/\s+(of\s+price|at\s+price|price|budget|worth|under|below|up to|upto|for)\s*(?:₹|rs\.?|inr)?\s*[\d,]+.*$/gi, '')
+    // Strip conversational adverbs that are not product names
+    .replace(/\b(fast|quickly|asap|urgent|urgently|now|instantly|please|pls|plz)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -432,27 +435,129 @@ const processPurchaseRequest = async ({
     }
   }
 
-  // Resolve dynamic payment method from user prompt (Cards, NetBanking, UPI, or Default Saved Method)
-  const paymentMethod = resolvePaymentMethod(effectiveMessage, savedPaymentMethod);
-  const cardLimit = Number(paymentMethod.autoDebitLimit || savedPaymentMethod?.autoDebitLimit || 15000);
-  
-  const intent = extractPurchaseIntent(effectiveMessage, cardLimit);
-  intent.paymentMethod = paymentMethod;
+  // ═══════════════════════════════════════════════════════════════════
+  //  Gemini-First Intent Extraction Engine
+  //  Gemini handles: product identification, query correction/expansion,
+  //  payment method detection, quantity, budget — all in one call.
+  //  Regex extractPurchaseIntent() is ONLY a fallback when Gemini is unavailable.
+  // ═══════════════════════════════════════════════════════════════════
 
-  // Strict Dual-Boundary Spending Limits:
-  // 1. If user gave prompt limit (e.g. 5000), effective limit is min(5000, cardLimit)
-  // 2. If user did not give prompt limit, effective limit is strictly the cardLimit (e.g. 2000)
-  const effectiveMaxLimit = intent.hasExplicitBudget 
-    ? Math.min(intent.maxPrice, cardLimit)
-    : cardLimit;
+  let intent = null;
+  let paymentMethod = null;
+  let geminiUsed = false;
 
-  intent.maxPrice = effectiveMaxLimit;
-  intent.cardLimit = cardLimit;
+  const isGeminiAvailable = apiKey && apiKey.trim() !== '' && !apiKey.includes('YOUR_GEMINI') && !apiKey.includes('XXXX');
+
+  if (isGeminiAvailable) {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+      const geminiPrompt = `You are a Shopping Assistant AI. Your job is to understand the user's purchase request and extract structured intent.
+
+CRITICAL RULES:
+1. **Query Correction & Expansion**: The user may use informal language, abbreviations, or conversational filler words. You MUST extract ONLY the actual product names.
+   - "buy a mouse fast from axis bank netbanking" → product is "mouse", NOT "mouse fast" (fast is an adverb, not part of the product)
+   - "buy me chicken biryani and pay using bob netbanking" → product is "chicken biryani"  
+   - "get me a good keyboard quickly" → product is "keyboard"
+   - "order 2 paneer butter masala asap" → product is "paneer butter masala", quantity is 2
+   - "buy ai and machine learning course" → product is "AI and Machine Learning" (compound product name, keep together)
+   - "buy chilli paneer dry" → product is "chilli paneer dry"
+
+2. **Payment Detection**: Identify any payment method mentioned. Common patterns:
+   - "using/with/from/via [bank] netbanking" → netbanking with that bank
+   - "pay with/using [card brand]" → card payment  
+   - "using upi / gpay / phonepe" → UPI payment
+   - If no payment method is mentioned, set paymentMethod to null
+
+3. **Filler Words to IGNORE in product names**: fast, quickly, asap, urgent, now, instantly, please, pls, plz, immediately
+4. **Payment keywords to NEVER include in product names**: netbanking, upi, card, credit card, debit card, bank, payment, pay, visa, mastercard, gpay, phonepe, paytm
+5. **Delivery keywords to NEVER include**: deliver, home, office, address, bangalore, bengaluru
+
+Extract the following JSON structure:
+{
+  "isCatalogWide": boolean (true if "each item", "all items", "every item", "whole menu"),
+  "targetShop": string or null (specific restaurant/shop/brand if mentioned),
+  "items": [{ "query": string (corrected/expanded product name ONLY), "quantity": number }],
+  "quantityPerItem": number (for catalog-wide orders, default 1),
+  "budget": number or null (price limit if mentioned),
+  "paymentMethod": string or null (e.g. "Bank of Baroda NetBanking", "Kotak Mahindra Bank NetBanking", "Axis Bank NetBanking", "SBI NetBanking", "HDFC NetBanking", "ICICI NetBanking", "Canara Bank NetBanking", "Visa Card", "Amazon Pay ICICI Card", "HDFC Millennia Card", "UPI", "Google Pay UPI", "PhonePe UPI", etc.)
+}
+
+User Message: "${effectiveMessage.replace(/"/g, '\\"')}"
+
+Respond ONLY with valid JSON inside a markdown codeblock.`;
+
+      const geminiRes = await geminiModel.generateContent(geminiPrompt);
+      const textOutput = geminiRes.response.text();
+      const jsonMatch = textOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, textOutput];
+
+      if (jsonMatch && jsonMatch[1]) {
+        const parsed = JSON.parse(jsonMatch[1].trim());
+
+        // Build intent from Gemini's structured output
+        const items = (parsed.items || []).filter(i => i.query && i.query.trim().length > 0);
+        const isCatalogWide = Boolean(parsed.isCatalogWide);
+        const targetShop = parsed.targetShop || null;
+        const quantityPerItem = Number(parsed.quantityPerItem) || 1;
+        const hasExplicitBudget = parsed.budget != null && Number(parsed.budget) > 0;
+
+        // Resolve payment from Gemini's extracted paymentMethod string
+        paymentMethod = resolvePaymentFromGeminiOutput(parsed.paymentMethod, savedPaymentMethod);
+        const cardLimit = Number(paymentMethod.autoDebitLimit || savedPaymentMethod?.autoDebitLimit || 15000);
+        const geminiMaxPrice = hasExplicitBudget ? Number(parsed.budget) : cardLimit;
+        const effectiveMaxLimit = hasExplicitBudget ? Math.min(geminiMaxPrice, cardLimit) : cardLimit;
+
+        const shopName = targetShop || 'Store';
+        const querySummary = isCatalogWide
+          ? `All ${shopName} Items (${quantityPerItem}x each)`
+          : items.map(i => `${i.quantity > 1 ? i.quantity + 'x ' : ''}${i.query}`).join(', ');
+
+        intent = {
+          items: items.length > 0 ? items : [{ query: querySummary || 'item', quantity: 1 }],
+          query: querySummary,
+          quantity: items.reduce((acc, i) => acc + (i.quantity || 1), 0),
+          maxPrice: effectiveMaxLimit,
+          cardLimit,
+          hasExplicitBudget,
+          isCatalogWide,
+          targetShop,
+          quantityPerItem,
+          currency: 'INR',
+          ratingRequirement: 'standard',
+          paymentMethod
+        };
+
+        geminiUsed = true;
+        console.log('[Gemini Intent]', JSON.stringify({ items: intent.items, payment: paymentMethod.label, budget: intent.maxPrice }));
+      }
+    } catch (err) {
+      console.warn('Gemini intent extraction failed, falling back to heuristic parser:', err.message);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  Fallback: Regex-based extraction (when Gemini is unavailable)
+  // ═══════════════════════════════════════════════════════
+  if (!geminiUsed) {
+    paymentMethod = resolvePaymentMethod(effectiveMessage, savedPaymentMethod);
+    const cardLimit = Number(paymentMethod.autoDebitLimit || savedPaymentMethod?.autoDebitLimit || 15000);
+
+    intent = extractPurchaseIntent(effectiveMessage, cardLimit);
+    intent.paymentMethod = paymentMethod;
+
+    const effectiveMaxLimit = intent.hasExplicitBudget
+      ? Math.min(intent.maxPrice, cardLimit)
+      : cardLimit;
+
+    intent.maxPrice = effectiveMaxLimit;
+    intent.cardLimit = cardLimit;
+  }
 
   const sessionContext = {
     userAuth: {
-      maxAmount: effectiveMaxLimit,
-      cardLimit: cardLimit,
+      maxAmount: intent.maxPrice,
+      cardLimit: intent.cardLimit,
       currency: intent.currency
     },
     customerName: customerName || user.name,
@@ -467,64 +572,7 @@ const processPurchaseRequest = async ({
   const steps = [];
   const toolCalls = [];
 
-  const addStep = (stepText, status = 'completed', meta = {}) => {
-    steps.push({
-      text: stepText,
-      status,
-      timestamp: new Date().toISOString(),
-      ...meta
-    });
-  };
-
-  // 1. Advanced Gemini AI Natural Language Intent Extraction
-  if (apiKey && apiKey.trim() !== '' && !apiKey.includes('YOUR_GEMINI') && !apiKey.includes('XXXX')) {
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-      
-      const nlpPrompt = `You are the Google Gemini AI Shopping Assistant Intent Parser.
-Extract the user purchase intent from the natural language message into valid JSON with this exact structure:
-{
-  "isCatalogWide": boolean (true if user asks for "each item", "all items", "every item", "whole menu" from the store or a specific restaurant/brand),
-  "targetShop": string or null (the specific restaurant, shop, or brand if specified, e.g. "Burger King", "La Pino'z Pizza", "Biryani By Kilo", "Mainland China", "The Belgian Waffle Co.", "Haldiram's", "Keychron", "Sony", "Logitech", etc., or null if entire store),
-  "quantityPerItem": number (the quantity for each item if catalog-wide, default 1),
-  "items": [ { "query": string, "quantity": number } ] (list of specific product items to buy. CRITICAL RULE: Payment instructions like "and make payment using bank of baroda netbanking", "using sbi netbanking", "pay with upi", and delivery destinations like "deliver to home" are NOT products and MUST NEVER be included in the items array!),
-  "budget": number or null (price limit mentioned in prompt, e.g. 5000),
-  "paymentMethod": string or null (e.g. "Bank of Baroda NetBanking", "SBI NetBanking", "Visa", "UPI", "Amazon Card", etc.)
-}
-
-User Message: "${effectiveMessage.replace(/"/g, '\\"')}"
-
-Respond ONLY with valid JSON inside a markdown codeblock.`;
-
-      const geminiRes = await geminiModel.generateContent(nlpPrompt);
-      const textOutput = geminiRes.response.text();
-      const jsonMatch = textOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, textOutput];
-      if (jsonMatch && jsonMatch[1]) {
-        const parsed = JSON.parse(jsonMatch[1].trim());
-        if (parsed.isCatalogWide !== undefined) {
-          intent.isCatalogWide = Boolean(parsed.isCatalogWide);
-          if (parsed.targetShop) intent.targetShop = parsed.targetShop;
-          if (parsed.quantityPerItem) intent.quantityPerItem = Number(parsed.quantityPerItem);
-          if (parsed.items && parsed.items.length > 0 && !parsed.isCatalogWide) {
-            intent.items = parsed.items;
-          }
-          if (parsed.budget) {
-            intent.maxPrice = Number(parsed.budget);
-            intent.hasExplicitBudget = true;
-          }
-          const shopName = intent.targetShop ? intent.targetShop : 'Store';
-          intent.query = intent.isCatalogWide 
-            ? `All ${shopName} Items (${intent.quantityPerItem || 1}x each)`
-            : intent.items.map(i => `${i.quantity > 1 ? i.quantity + 'x ' : ''}${i.query}`).join(', ');
-        }
-      }
-    } catch (err) {
-      console.warn('Gemini NLP fallback to heuristic parser:', err.message);
-    }
-  }
-
-  return runSimulatedBuyerAgent({ intent, sessionContext, steps, toolCalls, autoExecutePayment, savedPaymentMethod });
+  return runSimulatedBuyerAgent({ intent, sessionContext, steps, toolCalls, autoExecutePayment, savedPaymentMethod: paymentMethod });
 };
 
 /**
@@ -622,18 +670,58 @@ const runSimulatedBuyerAgent = async ({
       }
 
       // Step 2: Rerank candidates against item query with cross-niche intelligence
-      const qWords = itemIntent.query.toLowerCase().split(/[\s,_\-]+/).filter(w => w.length > 1);
+      const ignoreWords = ['fast', 'quickly', 'asap', 'now', 'the', 'item', 'product', 'from', 'with', 'and', 'bank', 'netbanking'];
+      const qWords = itemIntent.query.toLowerCase().split(/[\s,_\-]+/).filter(w => w.length > 1 && !ignoreWords.includes(w));
+      
       const rankedCandidates = [...searchResult.products].map(prod => {
         const pTitle = (prod.title || '').toLowerCase();
         const pDesc = (prod.description || '').toLowerCase();
         const pCategory = (prod.category || '').toLowerCase();
+        const pSubcategory = (prod.subcategory || '').toLowerCase();
         const pBrand = (prod.brand || prod.restaurantName || prod.instructor || '').toLowerCase();
+        const pTags = Array.isArray(prod.tags) ? prod.tags.map(t => t.toLowerCase()) : [];
 
         let score = 0;
         const fullItemQuery = itemIntent.query.toLowerCase();
 
         if (pTitle.includes(fullItemQuery)) score += 100;
         if (fullItemQuery.includes(pTitle)) score += 80;
+
+        // Exact noun boosts
+        if (fullItemQuery.includes('mouse') || fullItemQuery.includes('mice')) {
+          if (pTitle.includes('mouse') || pTags.includes('mouse') || pSubcategory.includes('mice')) score += 180;
+          if (pTitle.includes('charger') || pTitle.includes('keyboard') || pTitle.includes('headphone')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('charger') || fullItemQuery.includes('gan')) {
+          if (pTitle.includes('charger') || pTags.includes('charger')) score += 180;
+          if (pTitle.includes('mouse') || pTitle.includes('keyboard') || pTitle.includes('headphone')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('keyboard') || fullItemQuery.includes('keychron')) {
+          if (pTitle.includes('keyboard') || pTags.includes('keyboard')) score += 180;
+          if (pTitle.includes('mouse') || pTitle.includes('charger') || pTitle.includes('headphone')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('headphone') || fullItemQuery.includes('sony') || fullItemQuery.includes('audio')) {
+          if (pTitle.includes('headphone') || pTags.includes('headphones')) score += 180;
+          if (pTitle.includes('mouse') || pTitle.includes('charger') || pTitle.includes('keyboard')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('biryani')) {
+          if (pTitle.includes('biryani')) score += 180;
+          if (pTitle.includes('pizza') || pTitle.includes('burger') || pTitle.includes('waffle')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('pizza')) {
+          if (pTitle.includes('pizza')) score += 180;
+          if (pTitle.includes('biryani') || pTitle.includes('burger')) score -= 150;
+        }
+
+        if (fullItemQuery.includes('burger') || fullItemQuery.includes('whopper')) {
+          if (pTitle.includes('burger') || pTitle.includes('whopper')) score += 180;
+          if (pTitle.includes('biryani') || pTitle.includes('pizza')) score -= 150;
+        }
 
         if ((fullItemQuery.includes('python') || fullItemQuery.includes('ds')) && pTitle.includes('python') && (pTitle.includes('data science') || pDesc.includes('data science'))) {
           score += 90;
@@ -645,16 +733,17 @@ const runSimulatedBuyerAgent = async ({
           }
           if (pTitle.includes(w)) {
             score += 30;
+          } else if (pTags.includes(w)) {
+            score += 25;
           } else if (pDesc.includes(w) || pCategory.includes(w) || pBrand.includes(w)) {
             score += 15;
           }
         });
 
+        // Negative penalties for conflicting categories
         if (fullItemQuery.includes('mutton') && pTitle.includes('chicken')) score -= 50;
         if (fullItemQuery.includes('chicken') && pTitle.includes('mutton')) score -= 50;
         if (fullItemQuery.includes('paneer') && (pTitle.includes('chicken') || pTitle.includes('mutton'))) score -= 50;
-        if (fullItemQuery.includes('mouse') && pTitle.includes('keyboard')) score -= 50;
-        if (fullItemQuery.includes('keyboard') && pTitle.includes('mouse')) score -= 50;
 
         return { ...prod, matchScore: score };
       }).sort((a, b) => b.matchScore - a.matchScore);

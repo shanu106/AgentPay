@@ -240,10 +240,86 @@ function resolvePaymentMethod(message = '', defaultMethod = null) {
     label: baseDefault.label || `${baseDefault.brand || 'Saved Card'} (•••• ${baseDefault.last4 || '1007'})`,
     matchedFromPrompt: false,
     matchReason: `Using Default Pre-Saved ${baseDefault.brand || 'Card'} (•••• ${baseDefault.last4 || '1007'})`
+   };
+}
+
+/**
+ * Resolve payment method from Gemini's extracted paymentMethod string.
+ * Maps natural language payment labels (e.g. "Kotak Mahindra Bank NetBanking") 
+ * to pre-saved payment method configs using fuzzy keyword matching.
+ * 
+ * @param {string|null} geminiPaymentStr - Gemini's extracted payment method string
+ * @param {Object} defaultMethod - User's default saved payment method
+ * @returns {Object} Selected payment method object + match metadata
+ */
+function resolvePaymentFromGeminiOutput(geminiPaymentStr, defaultMethod = null) {
+  if (!geminiPaymentStr || typeof geminiPaymentStr !== 'string' || geminiPaymentStr.trim() === '') {
+    // No payment method extracted by Gemini — use default
+    const baseDefault = defaultMethod || PRE_SAVED_PAYMENT_METHODS.default_visa;
+    return {
+      ...baseDefault,
+      method: baseDefault.method || (baseDefault.type === 'netbanking' ? 'netbanking' : (baseDefault.type === 'upi' ? 'upi' : 'card')),
+      label: baseDefault.label || `${baseDefault.brand || 'Saved Card'} (•••• ${baseDefault.last4 || '1007'})`,
+      matchedFromPrompt: false,
+      matchReason: `Using Default (Gemini extracted no payment method)`
+    };
+  }
+
+  const text = geminiPaymentStr.toLowerCase();
+
+  // Keyword → config mapping (order matters: most specific first)
+  const mappings = [
+    { keywords: ['amazon', 'amazon pay', 'amazon icici'], config: PRE_SAVED_PAYMENT_METHODS.amazon_card },
+    { keywords: ['hdfc millennia', 'hdfc card', 'hdfc credit', 'hdfc debit'], config: PRE_SAVED_PAYMENT_METHODS.hdfc_card },
+    { keywords: ['bank of baroda', 'bob', 'baroda'], config: PRE_SAVED_PAYMENT_METHODS.bob_netbanking },
+    { keywords: ['sbi', 'state bank'], config: PRE_SAVED_PAYMENT_METHODS.sbi_netbanking },
+    { keywords: ['hdfc netbanking', 'hdfc net banking'], config: PRE_SAVED_PAYMENT_METHODS.hdfc_netbanking },
+    { keywords: ['icici'], config: PRE_SAVED_PAYMENT_METHODS.icici_netbanking },
+    { keywords: ['canara'], config: PRE_SAVED_PAYMENT_METHODS.canara_netbanking },
+    { keywords: ['kotak', 'kotak mahindra'], config: {
+      id: 'pm_kotak_nb', type: 'netbanking', method: 'netbanking', bank: 'KKBK',
+      bankName: 'Kotak Mahindra Bank', holder: 'User', label: 'Kotak Mahindra Bank NetBanking', autoDebitLimit: 50000
+    }},
+    { keywords: ['axis', 'axis bank'], config: {
+      id: 'pm_axis_nb', type: 'netbanking', method: 'netbanking', bank: 'UTIB',
+      bankName: 'Axis Bank', holder: 'User', label: 'Axis Bank NetBanking', autoDebitLimit: 50000
+    }},
+    { keywords: ['gpay', 'google pay', 'phonepe', 'paytm', 'upi'], config: PRE_SAVED_PAYMENT_METHODS.upi },
+    { keywords: ['visa', 'debit card', 'credit card', 'card'], config: PRE_SAVED_PAYMENT_METHODS.default_visa },
+  ];
+
+  for (const { keywords, config } of mappings) {
+    if (keywords.some(kw => text.includes(kw))) {
+      return {
+        ...config,
+        matchedFromPrompt: true,
+        matchReason: `Gemini identified: "${geminiPaymentStr}"`
+      };
+    }
+  }
+
+  // Generic netbanking fallback
+  if (text.includes('netbanking') || text.includes('net banking')) {
+    return {
+      ...PRE_SAVED_PAYMENT_METHODS.bob_netbanking,
+      matchedFromPrompt: true,
+      matchReason: `Gemini identified netbanking (defaulting to Bank of Baroda): "${geminiPaymentStr}"`
+    };
+  }
+
+  // If Gemini returned something unrecognized, use default
+  const baseDefault = defaultMethod || PRE_SAVED_PAYMENT_METHODS.default_visa;
+  return {
+    ...baseDefault,
+    method: baseDefault.method || 'card',
+    label: baseDefault.label || `${baseDefault.brand || 'Saved Card'} (•••• ${baseDefault.last4 || '1007'})`,
+    matchedFromPrompt: false,
+    matchReason: `Gemini payment "${geminiPaymentStr}" not recognized, using default`
   };
 }
 
 module.exports = {
   PRE_SAVED_PAYMENT_METHODS,
-  resolvePaymentMethod
+  resolvePaymentMethod,
+  resolvePaymentFromGeminiOutput
 };

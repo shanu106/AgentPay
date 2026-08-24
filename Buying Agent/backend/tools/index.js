@@ -386,12 +386,26 @@ const executeTool = async (name, args, sessionContext = {}) => {
             form.append('card[name]', activeMethod.holder || order.customerName || 'Nawaz Khan');
           }
 
-          const rzpResponse = await fetch('https://api.razorpay.com/v1/payments/create/ajax', {
+          let rzpResponse = await fetch('https://api.razorpay.com/v1/payments/create/ajax', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: form.toString()
           });
-          const rzpResult = await rzpResponse.json();
+          let rzpResult = await rzpResponse.json();
+
+          // If bank is not enabled on this test account (e.g. SBIN, HDFC, ICIC, KKBK, UTIB in test mode),
+          // fallback to primary test mock bank (BARB_R) so Razorpay test charge completes and marks order as paid
+          if (rzpResult.error && isNetBanking && (rzpResult.error.reason === 'bank_not_enabled' || rzpResult.error.code === 'BAD_REQUEST_ERROR')) {
+            console.log(`[NetBanking Test] Bank ${activeMethod.bank} not enabled on test merchant, routing to test mock bank BARB_R...`);
+            form.set('bank', 'BARB_R');
+            rzpResponse = await fetch('https://api.razorpay.com/v1/payments/create/ajax', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: form.toString()
+            });
+            rzpResult = await rzpResponse.json();
+          }
+
           if (rzpResult.error) {
             console.error('RAZORPAY PAYMENT CREATION ERROR:', JSON.stringify(rzpResult.error, null, 2));
           }
@@ -400,88 +414,120 @@ const executeTool = async (name, args, sessionContext = {}) => {
           if (rawPaymentId) {
             paymentId = rawPaymentId.startsWith('pay_') ? rawPaymentId : ('pay_' + rawPaymentId);
 
-            // Complete automated 3DS bank authorization / Mocksharp approval
-            if (rzpResult.request?.url) {
+            // ═══════════════════════════════════════════════════════════════
+            //  3DS / NetBanking Mock Bank Approval Flow
+            //  NetBanking: redirect goes directly to mocksharp bank page
+            //  Card: redirect goes to /authenticate (intermediate form) →
+            //        submitting that form takes us to the mocksharp bank page
+            //  In both cases, we submit success=S on the bank page to authorize.
+            // ═══════════════════════════════════════════════════════════════
+            if (rzpResult.request?.url && (isNetBanking || !isUpi)) {
               try {
-                let actionUrl = rzpResult.request.url;
-                let postParams = new URLSearchParams(rzpResult.request.content || {});
+                // Step 1: Follow initial redirect to get the first HTML page
+                const initialRes = await fetch(rzpResult.request.url, {
+                  method: rzpResult.request.method || 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: new URLSearchParams(rzpResult.request.content || {}).toString(),
+                  redirect: 'follow'
+                });
+                let pageHtml = await initialRes.text();
 
-                // If URL is an authenticate redirect, fetch HTML to extract bank form
-                if (actionUrl.includes('/authenticate')) {
-                  const authRes = await fetch(actionUrl, { method: 'POST' });
-                  const authHtml = await authRes.text();
-                  const formMatch = authHtml.match(/action="([^"]+)"/);
-                  if (formMatch) {
-                    actionUrl = formMatch[1].replace(/&amp;/g, '&');
-                    const inputMatches = [...authHtml.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
-                    postParams = new URLSearchParams();
-                    for (const m of inputMatches) postParams.append(m[1], m[2]);
+                // Step 2: Check if this is the bank page (has success input) or an
+                //         intermediate form (e.g. /authenticate for cards)
+                const hasBankSuccessField = pageHtml.includes('name="success"');
+
+                if (!hasBankSuccessField) {
+                  // This is an intermediate form (card /authenticate page)
+                  // Extract form action and all hidden inputs, then submit to reach bank page
+                  const intermediateAction = pageHtml.match(/action="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&');
+                  if (intermediateAction) {
+                    const intermediateInputs = [...pageHtml.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
+                    const intermediateForm = new URLSearchParams();
+                    for (const m of intermediateInputs) intermediateForm.append(m[1], m[2]);
+
+                    const bankPageRes = await fetch(intermediateAction, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                      body: intermediateForm.toString(),
+                      redirect: 'follow'
+                    });
+                    pageHtml = await bankPageRes.text();
                   }
                 }
 
-                // Post to mock bank gateway
-                const mockRes = await fetch(actionUrl, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                  body: postParams.toString()
-                });
-                const mockHtml = await mockRes.text();
+                // Step 3: Now we should be on the mock bank page — extract and submit
+                const formAction = pageHtml.match(/action="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&');
+                const callbackUrl = pageHtml.match(/name="callback_url"[^>]+value="([^"]+)"/)?.[1]?.replace(/&amp;/g, '&');
 
-                // Submit Success ("S") confirmation to bank submit endpoint
-                const submitMatch = mockHtml.match(/action="([^"]+)"/);
-                const cbMatch = mockHtml.match(/name="callback_url"[^>]+value="([^"]+)"/);
-                if (submitMatch && cbMatch) {
-                  const submitUrl = submitMatch[1].replace(/&amp;/g, '&');
-                  const cbUrl = cbMatch[1].replace(/&amp;/g, '&');
+                if (formAction) {
                   const submitForm = new URLSearchParams();
-                  submitForm.append('callback_url', cbUrl);
+                  if (callbackUrl) submitForm.append('callback_url', callbackUrl);
                   submitForm.append('language_code', 'en');
                   submitForm.append('success', 'S');
 
-                  const submitRes = await fetch(submitUrl, {
+                  await fetch(formAction, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: submitForm.toString()
+                    body: submitForm.toString(),
+                    redirect: 'follow'
                   });
-                  const submitHtml = await submitRes.text();
-                  const finalMatch = submitHtml.match(/action="([^"]+)"/);
-                  if (finalMatch) {
-                    const finalUrl = finalMatch[1].replace(/&amp;/g, '&');
-                    const finalInputs = [...submitHtml.matchAll(/<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"/gi)];
-                    const finalForm = new URLSearchParams();
-                    for (const m of finalInputs) finalForm.append(m[1], m[2]);
-                    await fetch(finalUrl, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                      body: finalForm.toString()
-                    });
-                  }
+                  console.log(`[Bank Flow] Submitted success to mocksharp for ${paymentId}`);
                 }
               } catch (mockErr) {
-                console.warn('Automated 3DS bank flow note:', mockErr.message);
+                console.warn('3DS/NetBanking bank approval flow note:', mockErr.message);
               }
             }
 
-            // Capture payment if authorized
+            // ═══════════════════════════════════════════════════════════════
+            //  Payment Status Polling & Capture
+            //  After 3DS/bank flow, poll Razorpay API for up to 8 seconds
+            //  waiting for the payment to reach 'authorized' status,
+            //  then explicitly capture it.
+            // ═══════════════════════════════════════════════════════════════
             try {
-              const checkRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
-                headers: {
-                  'Authorization': 'Basic ' + Buffer.from(`${keyId}:${secret}`).toString('base64')
-                }
-              });
-              const pData = await checkRes.json();
-              if (pData.status === 'authorized') {
-                await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/capture`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Basic ' + Buffer.from(`${keyId}:${secret}`).toString('base64')
-                  },
-                  body: JSON.stringify({ amount: (order.amount || 499) * 100, currency: order.currency || 'INR' })
+              const authHeader = 'Basic ' + Buffer.from(`${keyId}:${secret}`).toString('base64');
+              let paymentStatus = 'created';
+              let attempts = 0;
+              const maxAttempts = 8;
+
+              while (attempts < maxAttempts && paymentStatus !== 'authorized' && paymentStatus !== 'captured') {
+                await new Promise(r => setTimeout(r, 1000)); // Wait 1 second
+                attempts++;
+
+                const checkRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+                  headers: { 'Authorization': authHeader }
                 });
+                const pData = await checkRes.json();
+                paymentStatus = pData.status;
+                console.log(`[Payment Poll #${attempts}] ${paymentId} → status: ${paymentStatus}`);
+
+                if (paymentStatus === 'authorized') {
+                  // Capture the authorized payment
+                  const captureRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/capture`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': authHeader
+                    },
+                    body: JSON.stringify({ amount: (order.amount || 499) * 100, currency: order.currency || 'INR' })
+                  });
+                  const captureData = await captureRes.json();
+                  paymentStatus = captureData.status || 'captured';
+                  console.log(`[Payment Captured] ${paymentId} → status: ${paymentStatus}`);
+                  break;
+                }
+
+                if (paymentStatus === 'failed') {
+                  console.warn(`[Payment Failed] ${paymentId} → payment failed on Razorpay`);
+                  break;
+                }
+              }
+
+              if (paymentStatus !== 'captured' && paymentStatus !== 'authorized') {
+                console.warn(`[Payment Warning] ${paymentId} → final status after polling: ${paymentStatus}`);
               }
             } catch (capErr) {
-              console.warn('Payment capture check note:', capErr.message);
+              console.warn('Payment polling/capture error:', capErr.message);
             }
           }
         } catch (rzpErr) {
