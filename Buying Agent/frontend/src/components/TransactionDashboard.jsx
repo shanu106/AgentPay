@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { fetchUserOrders } from '../api/agentApi';
 
-const TransactionDashboard = ({ isOpen, onClose, userEmail }) => {
+const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = false }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('all'); // 'all' | 'paid' | 'pending' | 'denied'
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || isEmbedded) {
       loadTransactions();
     }
-  }, [isOpen, userEmail]);
+  }, [isOpen, isEmbedded, userEmail]);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -26,7 +26,7 @@ const TransactionDashboard = ({ isOpen, onClose, userEmail }) => {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isEmbedded) return null;
 
   const filteredOrders = orders.filter(o => {
     if (filter === 'paid') return o.payment_status === 'paid';
@@ -35,9 +35,8 @@ const TransactionDashboard = ({ isOpen, onClose, userEmail }) => {
     return true;
   });
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '780px', padding: '24px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+  const content = (
+    <div className={isEmbedded ? "terminal-card" : "modal-content"} onClick={e => e.stopPropagation()} style={isEmbedded ? { width: '100%', maxWidth: '960px', margin: '0 auto' } : { maxWidth: '780px', padding: '24px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '16px', marginBottom: '16px' }}>
@@ -154,15 +153,24 @@ const TransactionDashboard = ({ isOpen, onClose, userEmail }) => {
 
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '16px', marginTop: '16px' }}>
-          <button
-            type="button"
-            className="modal-btn-secondary"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          {onClose && (
+            <button
+              type="button"
+              className="modal-btn-secondary"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          )}
         </div>
       </div>
+  );
+
+  if (isEmbedded) return content;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      {content}
     </div>
   );
 };

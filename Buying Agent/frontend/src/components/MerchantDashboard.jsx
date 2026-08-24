@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { fetchMerchants, updateMerchantSettings } from '../api/agentApi';
 
-const MerchantDashboard = ({ isOpen, onClose }) => {
+const MerchantDashboard = ({ isOpen = true, onClose, isEmbedded = false }) => {
   const [merchants, setMerchants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || isEmbedded) {
       loadMerchants();
     }
-  }, [isOpen]);
+  }, [isOpen, isEmbedded]);
 
   const loadMerchants = async () => {
     setLoading(true);
@@ -62,11 +62,10 @@ const MerchantDashboard = ({ isOpen, onClose }) => {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isEmbedded) return null;
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '650px', padding: '24px' }}>
+  const content = (
+    <div className={isEmbedded ? "terminal-card" : "modal-content"} onClick={e => e.stopPropagation()} style={isEmbedded ? { width: '100%', maxWidth: '840px', margin: '0 auto' } : { maxWidth: '650px', padding: '24px' }}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '16px', marginBottom: '20px' }}>
@@ -183,15 +182,24 @@ const MerchantDashboard = ({ isOpen, onClose }) => {
 
         {/* Footer */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '16px' }}>
-          <button
-            type="button"
-            className="modal-btn-secondary"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          {onClose && (
+            <button
+              type="button"
+              className="modal-btn-secondary"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          )}
         </div>
       </div>
+  );
+
+  if (isEmbedded) return content;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      {content}
     </div>
   );
 };

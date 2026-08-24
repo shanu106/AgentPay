@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchAuthorization, updateAuthorization, revokeAuthorization } from '../api/agentApi';
 
-const AuthorizationDashboard = ({ isOpen, onClose, userEmail, onPolicyUpdated }) => {
+const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpdated, isEmbedded = false }) => {
   const [loading, setLoading] = useState(false);
   const [authData, setAuthData] = useState(null);
   const [spendingStats, setSpendingStats] = useState(null);
@@ -14,10 +14,10 @@ const AuthorizationDashboard = ({ isOpen, onClose, userEmail, onPolicyUpdated })
   const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || isEmbedded) {
       loadAuthorization();
     }
-  }, [isOpen, userEmail]);
+  }, [isOpen, isEmbedded, userEmail]);
 
   const loadAuthorization = async () => {
     setLoading(true);
@@ -90,16 +90,15 @@ const AuthorizationDashboard = ({ isOpen, onClose, userEmail, onPolicyUpdated })
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isEmbedded) return null;
 
   const spentToday = parseFloat(spendingStats?.spentToday || authData?.spent_today || 0);
   const currentDailyLimit = parseFloat(spendingStats?.dailyLimit || authData?.daily_spending_limit || 10000);
   const spentPct = Math.min(100, Math.round((spentToday / (currentDailyLimit || 1)) * 100));
   const isActive = authData?.status === 'active';
 
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '620px', padding: '24px' }}>
+  const content = (
+    <div className={isEmbedded ? "terminal-card" : "modal-content"} onClick={e => e.stopPropagation()} style={isEmbedded ? { width: '100%', maxWidth: '840px', margin: '0 auto' } : { maxWidth: '620px', padding: '24px' }}>
         
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '16px', marginBottom: '20px' }}>
@@ -307,6 +306,15 @@ const AuthorizationDashboard = ({ isOpen, onClose, userEmail, onPolicyUpdated })
           </div>
         </form>
       </div>
+  );
+
+  if (isEmbedded) {
+    return content;
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      {content}
     </div>
   );
 };

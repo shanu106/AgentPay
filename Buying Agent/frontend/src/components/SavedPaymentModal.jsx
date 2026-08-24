@@ -188,6 +188,8 @@ function SavedPaymentModal({ isOpen, onClose, userEmail = 'nawaz@gmail.com', sav
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '680px', width: '92vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>

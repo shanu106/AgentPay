@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { fetchAuditLogs } from '../api/agentApi';
 
-function AuditLogsModal({ isOpen, onClose }) {
+function AuditLogsModal({ isOpen = true, onClose, isEmbedded = false }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || isEmbedded) {
       loadLogs();
     }
-  }, [isOpen]);
+  }, [isOpen, isEmbedded]);
 
   const loadLogs = async () => {
     try {
@@ -23,11 +23,10 @@ function AuditLogsModal({ isOpen, onClose }) {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !isEmbedded) return null;
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: '750px' }} onClick={(e) => e.stopPropagation()}>
+  const content = (
+    <div className={isEmbedded ? "terminal-card" : "modal-box"} style={isEmbedded ? { width: '100%', maxWidth: '960px', margin: '0 auto' } : { maxWidth: '750px' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '1.2rem' }}>📜</span>
@@ -100,6 +99,13 @@ function AuditLogsModal({ isOpen, onClose }) {
           )}
         </div>
       </div>
+  );
+
+  if (isEmbedded) return content;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      {content}
     </div>
   );
 }
