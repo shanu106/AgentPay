@@ -1,6 +1,8 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { toolDeclarations, executeTool } = require('../tools/index');
 const { resolvePaymentMethod, resolvePaymentFromGeminiOutput } = require('./paymentMethods');
+const PolicyEngine = require('./policy/PolicyEngine');
+const SpendingLedger = require('./policy/SpendingLedger');
 const userStore = require('./userStore.service');
 const emailService = require('./email.service');
 
@@ -588,7 +590,11 @@ Respond ONLY with valid JSON inside a markdown codeblock.`;
     intent.cardLimit = cardLimit;
   }
 
+  const idempotencyKey = `idem_${user.id}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+
   const sessionContext = {
+    userId: user.id,
+    idempotencyKey,
     userAuth: {
       maxAmount: intent.maxPrice,
       cardLimit: intent.cardLimit,
@@ -660,6 +666,7 @@ const runSimulatedBuyerAgent = async ({
         toolCalls,
         selectedProduct: null,
         order: null,
+        autoPaid: false,
         requiresCheckout: false
       };
     }
@@ -699,6 +706,7 @@ const runSimulatedBuyerAgent = async ({
           toolCalls,
           selectedProduct: null,
           order: null,
+          autoPaid: false,
           requiresCheckout: false
         };
       }
@@ -794,6 +802,7 @@ const runSimulatedBuyerAgent = async ({
           toolCalls,
           selectedProduct: null,
           order: null,
+          autoPaid: false,
           requiresCheckout: false
         };
       }
@@ -820,8 +829,63 @@ const runSimulatedBuyerAgent = async ({
     }
   }
 
-  // Pre-Authorization Check against aggregate cart total
-  if (totalGrandAmount > intent.maxPrice) {
+  const activeMethod = sessionContext.paymentMethod || savedPaymentMethod;
+  const primaryItem = evaluatedItems[0]?.product;
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Deterministic Policy Engine Evaluation (Spec Phase 4 & 5)
+  //  Checks: Max transaction amount, daily limit, merchant policy,
+  //          category policy, payment method, and confirmation threshold
+  // ═══════════════════════════════════════════════════════════════
+  let policyEval = null;
+  if (sessionContext.userId) {
+    policyEval = await PolicyEngine.evaluate({
+      userId: sessionContext.userId,
+      amount: totalGrandAmount,
+      currency: 'INR',
+      merchantId: primaryItem?.merchantId,
+      productCategory: primaryItem?.category,
+      paymentMethodId: activeMethod?.id
+    });
+  }
+
+  // 1. Policy DENY: Reject transaction immediately without payment attempt
+  if (policyEval && policyEval.decision === 'DENY') {
+    const reasons = policyEval.reasonCodes.join(', ');
+    steps.push({
+      text: `Policy Engine: Purchase DENIED (${reasons})`,
+      status: 'denied'
+    });
+
+    let denyExplanation = 'The requested purchase exceeds your authorized transaction limits or spending policies.';
+    if (policyEval.reasonCodes.includes('AMOUNT_EXCEEDS_TRANSACTION_LIMIT')) {
+      denyExplanation = `The total amount of **₹${totalGrandAmount.toLocaleString()}** exceeds your maximum per-transaction limit of **₹${parseFloat(policyEval.authorization?.max_transaction_amount || intent.maxPrice).toLocaleString()}**.`;
+    } else if (policyEval.reasonCodes.includes('DAILY_SPENDING_LIMIT_EXCEEDED')) {
+      denyExplanation = `This purchase of **₹${totalGrandAmount.toLocaleString()}** exceeds your daily spending limit of **₹${parseFloat(policyEval.authorization?.daily_spending_limit || 10000).toLocaleString()}** (already spent today: ₹${parseFloat(policyEval.details?.spentToday || 0).toLocaleString()}).`;
+    } else if (policyEval.reasonCodes.includes('MERCHANT_NOT_ALLOWED')) {
+      denyExplanation = `Purchases from this merchant are not permitted by your authorization policy.`;
+    } else if (policyEval.reasonCodes.includes('CATEGORY_NOT_ALLOWED')) {
+      denyExplanation = `Products in category "${primaryItem?.category}" are not permitted by your authorization policy.`;
+    } else if (policyEval.reasonCodes.includes('AUTHORIZATION_EXPIRED')) {
+      denyExplanation = `Your agent shopping authorization has expired. Please renew it in the Authorization Settings.`;
+    }
+
+    return {
+      success: false,
+      intent,
+      policy: policyEval,
+      reply: `🛡️ **Purchase Blocked by Policy Engine**:\n\n${denyExplanation}\n\n*No payment was charged.*`,
+      steps,
+      toolCalls,
+      selectedProduct: primaryItem,
+      order: null,
+      autoPaid: false,
+      requiresCheckout: false
+    };
+  }
+
+  // 2. Legacy fallback check if policy was not evaluated via DB
+  if (!policyEval && totalGrandAmount > intent.maxPrice) {
     const limitLabel = intent.hasExplicitBudget ? `budget limit of ₹${intent.maxPrice.toLocaleString()}` : `pre-authorized limit of ₹${intent.maxPrice.toLocaleString()}`;
     steps.push({
       text: `Order total ₹${totalGrandAmount.toLocaleString()} exceeds ${limitLabel}.`,
@@ -833,11 +897,17 @@ const runSimulatedBuyerAgent = async ({
       reply: `⚠️ **Purchase Blocked**:\n\nThe order total is **₹${totalGrandAmount.toLocaleString()}**, which exceeds your **${limitLabel}**.\n\nNo payment was charged.`,
       steps,
       toolCalls,
-      selectedProduct: evaluatedItems[0]?.product,
+      selectedProduct: primaryItem,
       order: null,
       requiresCheckout: false
     };
   }
+
+  // 3. Confirmation Threshold Check: Requires manual confirmation if above threshold
+  const isAboveConfirmationThreshold = Boolean(
+    policyEval?.decision === 'REQUIRES_CONFIRMATION' || 
+    (policyEval?.details?.confirmationThreshold > 0 && totalGrandAmount > policyEval.details.confirmationThreshold)
+  );
 
   // Check Availability
   for (const item of evaluatedItems) {
@@ -848,7 +918,7 @@ const runSimulatedBuyerAgent = async ({
   // Create Order
   const orderResult = await executeTool('createOrder', {
     items: evaluatedItems.map(i => ({ productId: i.product.id, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal })),
-    productId: evaluatedItems[0]?.product.id,
+    productId: primaryItem?.id,
     quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0)
   }, sessionContext);
   toolCalls.push({ tool: 'createOrder', args: { items: evaluatedItems }, result: orderResult });
@@ -864,13 +934,12 @@ const runSimulatedBuyerAgent = async ({
       reply: `⚠️ **Order Creation Failed**:\n\n${orderResult.error}`,
       steps,
       toolCalls,
-      selectedProduct: evaluatedItems[0]?.product,
+      selectedProduct: primaryItem,
       order: null,
       requiresCheckout: false
     };
   }
 
-  const activeMethod = sessionContext.paymentMethod || savedPaymentMethod;
   const methodLabel = activeMethod.label || `${activeMethod.brand || 'Saved Card'} (•••• ${activeMethod.last4 || '1007'})`;
 
   // Initiate Payment
@@ -878,24 +947,59 @@ const runSimulatedBuyerAgent = async ({
   toolCalls.push({ tool: 'initiatePayment', args: { orderId: orderResult.orderId }, result: paymentData });
 
   let verificationResult = null;
+  const shouldAutoExecute = autoExecutePayment && !isAboveConfirmationThreshold;
 
-  // Direct Autonomous Payment on Razorpay API
-  if (autoExecutePayment) {
+  // If requires confirmation above threshold, stop auto-execution and prompt user
+  if (isAboveConfirmationThreshold) {
+    steps.push({
+      text: `Order ₹${totalGrandAmount.toLocaleString()} exceeds auto-approval threshold (₹${policyEval?.details?.confirmationThreshold || 3000}). User confirmation required.`,
+      status: 'completed'
+    });
+  }
+
+  // Direct Autonomous Payment on Razorpay API (only if within auto-approval threshold)
+  if (shouldAutoExecute) {
+    // Atomically reserve spend in spending ledger
+    if (sessionContext.userId) {
+      const reserveRes = await SpendingLedger.reserveSpend(sessionContext.userId, totalGrandAmount);
+      if (!reserveRes.success) {
+        steps.push({ text: `Ledger reservation failed: ${reserveRes.reason}`, status: 'denied' });
+        return {
+          success: false,
+          intent,
+          reply: `⚠️ **Spending Limit Exceeded**: You have reached your daily spending limit.`,
+          steps,
+          toolCalls,
+          selectedProduct: primaryItem,
+          order: null,
+          requiresCheckout: false
+        };
+      }
+    }
+
     steps.push({
       text: `Processing secure payment via ${methodLabel}`,
       status: 'completed'
     });
 
-    verificationResult = await executeTool('verifyPayment', {
-      orderId: orderResult.orderId,
-      razorpayOrderId: paymentData.razorpayOrderId
-    }, sessionContext);
-    toolCalls.push({ tool: 'verifyPayment', args: { orderId: orderResult.orderId }, result: verificationResult });
+    try {
+      verificationResult = await executeTool('verifyPayment', {
+        orderId: orderResult.orderId,
+        razorpayOrderId: paymentData.razorpayOrderId
+      }, sessionContext);
+      toolCalls.push({ tool: 'verifyPayment', args: { orderId: orderResult.orderId }, result: verificationResult });
 
-    steps.push({
-      text: `Payment captured & order placed successfully!`,
-      status: 'completed'
-    });
+      steps.push({
+        text: `Payment captured & order placed successfully!`,
+        status: 'completed'
+      });
+    } catch (payErr) {
+      // Rollback spend on payment failure
+      if (sessionContext.userId) {
+        await SpendingLedger.rollbackSpend(sessionContext.userId, totalGrandAmount);
+      }
+      throw payErr;
+    }
 
     // Save to Persistent User Order in PostgreSQL
     try {
@@ -954,14 +1058,14 @@ const runSimulatedBuyerAgent = async ({
   const deliveryAddr = sessionContext.deliveryAddress;
   const addrText = deliveryAddr ? `${deliveryAddr.label} (${deliveryAddr.street}, ${deliveryAddr.city} - ${deliveryAddr.pincode})` : 'Default Address (Bengaluru)';
 
-  const reply = autoExecutePayment ?
+  const reply = shouldAutoExecute ?
     `🎉 **Order Confirmed & Paid Successfully!**\n\nI have successfully ordered and secured payment for all **${evaluatedItems.length} items**:\n\n### 📋 Itemized Receipt:\n${itemsListFormatted}\n\n---\n- **Total Amount Paid**: **₹${orderResult.amount.toLocaleString()}**\n- **Payment Method**: ${methodLabel}\n- **Pre-Authorized Spending Limit**: ₹${(activeMethod.autoDebitLimit || 15000).toLocaleString()} (Verified ✓)\n- **📍 Delivery Address**: ${addrText}\n- **📧 Email Confirmation**: Sent to \`${sessionContext.customerEmail}\` ✓\n- **Store Order ID**: \`${orderResult.orderId}\`\n- **Razorpay Order ID**: \`${paymentData.razorpayOrderId || orderResult.orderId}\`\n- **Razorpay Payment ID**: \`${verificationResult?.paymentId}\` (Captured ✓)\n\nYour order is confirmed and will be delivered shortly!` :
-    `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the payment step below to finalize your order!`;
-    `I have evaluated all items for you:\n\n${itemsListFormatted}\n\n- **Total**: ₹${orderResult.amount.toLocaleString()}\n- **Order ID**: \`${orderResult.orderId}\`\n\nPlease complete the payment step below to finalize your order!`;
+    `I have prepared your order for all **${evaluatedItems.length} items**:\n\n${itemsListFormatted}\n\n- **Total Amount**: **₹${orderResult.amount.toLocaleString()}**\n- **Order ID**: \`${orderResult.orderId}\`\n- **Status**: ${isAboveConfirmationThreshold ? '⚠️ Requires User Confirmation (Exceeds auto-approval limit)' : 'Awaiting Checkout'}\n\nPlease confirm and complete checkout below to finalize your order!`;
 
   return {
     success: true,
     intent,
+    policy: policyEval,
     reply,
     steps,
     toolCalls,
@@ -971,13 +1075,14 @@ const runSimulatedBuyerAgent = async ({
       paymentMethod: activeMethod,
       deliveryAddress: sessionContext.deliveryAddress,
       userEmail: sessionContext.customerEmail,
-      status: autoExecutePayment ? 'confirmed' : 'created',
-      paymentStatus: autoExecutePayment ? 'paid' : 'pending'
+      status: shouldAutoExecute ? 'confirmed' : 'created',
+      paymentStatus: shouldAutoExecute ? 'paid' : 'pending'
     },
     paymentData,
     verification: verificationResult,
-    autoPaid: Boolean(autoExecutePayment && verificationResult?.paymentStatus === 'paid'),
-    requiresCheckout: !Boolean(autoExecutePayment && verificationResult?.paymentStatus === 'paid'),
+    autoPaid: Boolean(shouldAutoExecute && verificationResult?.paymentStatus === 'paid'),
+    requiresCheckout: !Boolean(shouldAutoExecute && verificationResult?.paymentStatus === 'paid'),
+    requiresConfirmation: isAboveConfirmationThreshold,
     autoLaunchCheckout: false
   };
 };

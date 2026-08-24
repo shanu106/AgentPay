@@ -1,5 +1,7 @@
 const userStore = require('../services/userStore.service');
 const emailService = require('../services/email.service');
+const PolicyEngine = require('../services/policy/PolicyEngine');
+const SpendingLedger = require('../services/policy/SpendingLedger');
 
 let activeUserEmail = 'nawaz@gmail.com';
 
@@ -248,6 +250,128 @@ const deletePaymentMethod = async (req, res) => {
   }
 };
 
+/**
+ * Get Agent Authorization & Policy Settings
+ */
+const getAuthorization = async (req, res) => {
+  try {
+    const email = (req.query.email || req.user?.email || activeUserEmail).toLowerCase().trim();
+    const user = await userStore.getUser(email);
+    const auth = await PolicyEngine.getAuthorizationByEmail(email);
+    const spendingStats = await SpendingLedger.getSpendingStats(user.id);
+
+    res.json({
+      success: true,
+      authorization: auth,
+      spendingStats,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Update Agent Authorization & Spending Limits
+ */
+const updateAuthorization = async (req, res) => {
+  try {
+    const email = (req.body.email || req.user?.email || activeUserEmail).toLowerCase().trim();
+    const user = await userStore.getUser(email);
+    const {
+      maxTransactionAmount,
+      dailySpendingLimit,
+      allowedCategories,
+      allowedMerchants,
+      allowedPaymentMethods,
+      requireConfirmationAbove,
+      expiresInDays
+    } = req.body;
+
+    const updated = await PolicyEngine.upsertAuthorization(user.id, {
+      maxTransactionAmount: parseFloat(maxTransactionAmount) || 5000,
+      dailySpendingLimit: parseFloat(dailySpendingLimit) || 10000,
+      allowedCategories: allowedCategories || ['courses', 'food', 'electronics'],
+      allowedMerchants: allowedMerchants || [],
+      allowedPaymentMethods: allowedPaymentMethods || [],
+      requireConfirmationAbove: parseFloat(requireConfirmationAbove) || 3000,
+      expiresInDays: parseInt(expiresInDays, 10) || 30
+    });
+
+    const spendingStats = await SpendingLedger.getSpendingStats(user.id);
+
+    res.json({
+      success: true,
+      message: 'Agent authorization policy updated successfully in PostgreSQL.',
+      authorization: updated,
+      spendingStats
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Revoke Agent Authorization
+ */
+const revokeAuthorization = async (req, res) => {
+  try {
+    const { authorizationId } = req.body;
+    const revoked = await PolicyEngine.revokeAuthorization(authorizationId);
+    res.json({
+      success: true,
+      message: 'Agent authorization revoked.',
+      authorization: revoked
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Get Merchants List & Settings
+ */
+const getMerchants = async (req, res) => {
+  try {
+    const result = await userStore.query('SELECT * FROM merchants ORDER BY name ASC');
+    res.json({
+      success: true,
+      merchants: result.rows
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Update Merchant Settings
+ */
+const updateMerchantSettings = async (req, res) => {
+  try {
+    const { merchantId, agentCommerceEnabled, maxAutonomousOrderAmount } = req.body;
+    if (!merchantId) {
+      return res.status(400).json({ success: false, message: 'merchantId is required.' });
+    }
+
+    const updateRes = await userStore.query(
+      `UPDATE merchants SET 
+        agent_commerce_enabled = COALESCE($1, agent_commerce_enabled),
+        max_autonomous_order_amount = COALESCE($2, max_autonomous_order_amount),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 RETURNING *`,
+      [agentCommerceEnabled, maxAutonomousOrderAmount, merchantId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Merchant AI-commerce settings updated successfully.',
+      merchant: updateRes.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const getActiveUserEmail = () => activeUserEmail;
 
 module.exports = {
@@ -264,5 +388,10 @@ module.exports = {
   setDefaultPaymentMethod,
   updatePaymentMethod,
   deletePaymentMethod,
+  getAuthorization,
+  updateAuthorization,
+  revokeAuthorization,
+  getMerchants,
+  updateMerchantSettings,
   getActiveUserEmail
 };

@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const agentController = require('../controllers/agent.controller');
+const { validatePurchaseInput } = require('../middlewares/validation.middleware');
+const { purchaseRateLimiter } = require('../middlewares/rateLimit.middleware');
 
-// Autonomous Purchase
-router.post('/purchase', agentController.handlePurchase);
+// Autonomous Purchase (Rate-limited & Validated)
+router.post('/purchase', purchaseRateLimiter, validatePurchaseInput, agentController.handlePurchase);
 
 // Saved Payment Methods
 router.get('/saved-payment-method', agentController.getSavedPaymentMethod);

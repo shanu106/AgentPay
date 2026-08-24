@@ -8,6 +8,9 @@ import ApiKeyModal from './components/ApiKeyModal';
 import SavedPaymentModal from './components/SavedPaymentModal';
 import AuthModal from './components/AuthModal';
 import OrderHistoryModal from './components/OrderHistoryModal';
+import AuthorizationDashboard from './components/AuthorizationDashboard';
+import MerchantDashboard from './components/MerchantDashboard';
+import TransactionDashboard from './components/TransactionDashboard';
 import './App.css';
 
 const SUPPORTED_LANGUAGES = {
@@ -91,6 +94,9 @@ function App() {
   // Modals & User Auth State
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+  const [isAuthSettingsOpen, setIsAuthSettingsOpen] = useState(false);
+  const [isMerchantOpen, setIsMerchantOpen] = useState(false);
+  const [isTxHistoryOpen, setIsTxHistoryOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
   const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
@@ -360,6 +366,27 @@ function App() {
         </div>
 
         <div className="header-actions">
+          {/* Persistent Razorpay Test Mode Badge */}
+          <div 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              fontSize: '11px',
+              fontWeight: '800',
+              letterSpacing: '0.5px'
+            }}
+            title="Razorpay Test Mode is Active. No real money is charged."
+          >
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 8px #10b981' }}></span>
+            <span>RAZORPAY TEST MODE</span>
+          </div>
+
           {/* User Account / PostgreSQL Auth Button */}
           <button 
             className="key-status-btn"
@@ -374,6 +401,54 @@ function App() {
           >
             <span>👤</span>
             <span>{userProfile?.name ? `${userProfile.name} (${userProfile.email.split('@')[0]})` : 'PostgreSQL User'}</span>
+          </button>
+
+          {/* AI Shopping Authorization & Spending Policy Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsAuthSettingsOpen(true)}
+            style={{
+              background: 'rgba(16, 185, 129, 0.12)',
+              borderColor: 'rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              fontWeight: '700'
+            }}
+            title="Configure AI Spending Policies, Daily Budgets & Thresholds"
+          >
+            <span>🛡️</span>
+            <span>Policies & Limits</span>
+          </button>
+
+          {/* Merchant AI-Commerce Controls Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsMerchantOpen(true)}
+            style={{
+              background: 'rgba(99, 102, 241, 0.12)',
+              borderColor: 'rgba(99, 102, 241, 0.35)',
+              color: '#a5b4fc',
+              fontWeight: '700'
+            }}
+            title="Merchant AI-Commerce Settings & Autonomous Limits"
+          >
+            <span>🏪</span>
+            <span>Merchants</span>
+          </button>
+
+          {/* Transactions Dashboard Button */}
+          <button 
+            className="key-status-btn"
+            onClick={() => setIsTxHistoryOpen(true)}
+            style={{
+              background: 'rgba(2, 132, 199, 0.12)',
+              borderColor: 'rgba(2, 132, 199, 0.35)',
+              color: '#38bdf8',
+              fontWeight: '700'
+            }}
+            title="View Transactions & Policy Decision Trace"
+          >
+            <span>📊</span>
+            <span>Transactions</span>
           </button>
 
           {/* Language Switcher (English / Hindi) */}
@@ -668,6 +743,26 @@ function App() {
         onClose={() => setIsOrderHistoryOpen(false)}
         userEmail={customerEmail}
         userName={customerName}
+      />
+
+      {/* AI Authorization & Policy Settings Dashboard */}
+      <AuthorizationDashboard
+        isOpen={isAuthSettingsOpen}
+        onClose={() => setIsAuthSettingsOpen(false)}
+        userEmail={customerEmail}
+      />
+
+      {/* Merchant AI-Commerce Dashboard */}
+      <MerchantDashboard
+        isOpen={isMerchantOpen}
+        onClose={() => setIsMerchantOpen(false)}
+      />
+
+      {/* Transaction & Policy Decision Trace Dashboard */}
+      <TransactionDashboard
+        isOpen={isTxHistoryOpen}
+        onClose={() => setIsTxHistoryOpen(false)}
+        userEmail={customerEmail}
       />
 
       {/* Audit Logs Modal */}

@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user.controller');
+const { validateAuthorizationInput } = require('../middlewares/validation.middleware');
+const { authRateLimiter } = require('../middlewares/rateLimit.middleware');
 
 // User Authentication & Profile
-router.post('/signup', userController.signupUser);
-router.post('/login', userController.loginUser);
+router.post('/signup', authRateLimiter, userController.signupUser);
+router.post('/login', authRateLimiter, userController.loginUser);
 router.get('/profile', userController.getUserProfile);
 
 // Address Management
@@ -23,5 +25,14 @@ router.post('/payment-methods/default', userController.setDefaultPaymentMethod);
 router.post('/payment-methods/update', userController.updatePaymentMethod);
 router.post('/payment-methods/delete', userController.deletePaymentMethod);
 router.delete('/payment-methods', userController.deletePaymentMethod);
+
+// Agent Authorization & Spending Policy
+router.get('/authorization', userController.getAuthorization);
+router.post('/authorization', validateAuthorizationInput, userController.updateAuthorization);
+router.post('/authorization/revoke', userController.revokeAuthorization);
+
+// Merchant AI-Commerce Settings
+router.get('/merchants', userController.getMerchants);
+router.post('/merchants/settings', userController.updateMerchantSettings);
 
 module.exports = router;

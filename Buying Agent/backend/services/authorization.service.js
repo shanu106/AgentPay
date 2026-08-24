@@ -1,15 +1,54 @@
+const PolicyEngine = require('./policy/PolicyEngine');
+const SpendingLedger = require('./policy/SpendingLedger');
+
 /**
- * Authorization Engine (Spec Section 6 & 8)
+ * Authorization Engine (Spec Section 4, 5 & 6)
  * 
  * Critical security boundary:
  * The agent may reason about purchasing, but the backend decides whether spending is allowed.
  * Never trust price values supplied by the LLM.
- * Independently enforce user spending limits against authoritative merchant prices.
+ * Independently enforce user spending limits, daily ledger, merchant status, and authorization policies.
  */
 
 class AuthorizationService {
   /**
-   * Validate user purchase authorization against authoritative product data
+   * Async comprehensive policy check against PostgreSQL authorization model
+   */
+  static async evaluatePolicy({ userId, amount, currency = 'INR', merchantId, productCategory, paymentMethodId, authorization }) {
+    return PolicyEngine.evaluate({
+      userId,
+      amount,
+      currency,
+      merchantId,
+      productCategory,
+      paymentMethodId,
+      authorization
+    });
+  }
+
+  /**
+   * Check merchant policy
+   */
+  static async checkMerchantPolicy(merchantId, amount) {
+    return PolicyEngine.checkMerchantPolicy(merchantId, amount);
+  }
+
+  /**
+   * Atomically reserve daily spend
+   */
+  static async reserveSpend(userId, amount) {
+    return SpendingLedger.reserveSpend(userId, amount);
+  }
+
+  /**
+   * Rollback reserved spend on payment failure
+   */
+  static async rollbackSpend(userId, amount) {
+    return SpendingLedger.rollbackSpend(userId, amount);
+  }
+
+  /**
+   * Validate user purchase authorization against authoritative product data (Synchronous fallback)
    * @param {Object} params
    * @param {number} params.maxAmount - Maximum spending limit authorized by user
    * @param {string} params.currency - Expected currency (default 'INR')

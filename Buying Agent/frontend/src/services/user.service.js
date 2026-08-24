@@ -137,5 +137,46 @@ export const userService = {
       headers: getAuthHeaders()
     });
     return handleResponse(res);
+  },
+
+  async fetchAuthorization(email) {
+    const res = await fetch(`${API_BASE}/user/authorization?email=${encodeURIComponent(email || '')}`, {
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+  },
+
+  async updateAuthorization(authData, email) {
+    const res = await fetch(`${API_BASE}/user/authorization`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ ...authData, email })
+    });
+    return handleResponse(res);
+  },
+
+  async revokeAuthorization(authorizationId) {
+    const res = await fetch(`${API_BASE}/user/authorization/revoke`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ authorizationId })
+    });
+    return handleResponse(res);
+  },
+
+  async fetchMerchants() {
+    const res = await fetch(`${API_BASE}/user/merchants`, {
+      headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+  },
+
+  async updateMerchantSettings(merchantData) {
+    const res = await fetch(`${API_BASE}/user/merchants/settings`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(merchantData)
+    });
+    return handleResponse(res);
   }
 };

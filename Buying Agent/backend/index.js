@@ -5,6 +5,7 @@ const config = require('./config/razorpay.config');
 
 const agentRoutes = require('./routes/agent.routes');
 const userRoutes = require('./routes/user.routes');
+const webhookRoutes = require('./routes/webhook.routes');
 const agentController = require('./controllers/agent.controller');
 
 const app = express();
@@ -23,6 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Mount Modular Routers (Separation of Concerns)
 app.use('/api/agent', agentRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // System & Config Routes
 app.get('/api/config', agentController.getConfig);
