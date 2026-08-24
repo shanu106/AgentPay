@@ -89,6 +89,94 @@ function App() {
     }
   };
 
+  // Voice Agent State
+  const [isListening, setIsListening] = useState(false);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
+
+  // Helper: Play Spoken Voice Feedback (ElevenLabs Audio / Web Speech API fallback)
+  const playVoiceFeedback = (spokenText, audioUrl) => {
+    if (!isVoiceEnabled || !spokenText) return;
+
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+      if (audioUrl && audioUrl.startsWith('data:audio/')) {
+        const audio = new Audio(audioUrl);
+        audio.play().catch(err => {
+          console.warn('[ElevenLabs Playback Fallback]:', err.message);
+          speakWithBrowser(spokenText);
+        });
+      } else {
+        speakWithBrowser(spokenText);
+      }
+    } catch (err) {
+      console.warn('[Voice Feedback Error]:', err);
+    }
+  };
+
+  const speakWithBrowser = (text) => {
+    if (!window.speechSynthesis) return;
+    const cleanText = text.replace(/[*_`#]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.lang = 'en-US';
+
+    const voices = window.speechSynthesis.getVoices();
+    const naturalVoice = voices.find(v => (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha')) && v.lang.startsWith('en'));
+    if (naturalVoice) utterance.voice = naturalVoice;
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Toggle Voice Input Microphone
+  const toggleListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-IN';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        setPurchaseQuery(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('Failed to start speech recognition:', err.message);
+      setIsListening(false);
+    }
+  };
+
   const handlePurchaseSubmit = async (queryText) => {
     const text = (queryText || purchaseQuery).trim();
     if (!text || loading) return;
@@ -117,6 +205,11 @@ function App() {
       setActiveOrder(res.order);
       setPaymentData(res.paymentData);
 
+      // Play Spoken Voice Feedback on both Success and Failure
+      if (res.spokenFeedback) {
+        playVoiceFeedback(res.spokenFeedback, res.audioUrl);
+      }
+
       // Zero Human Intervention: If autoPaid is true, order is confirmed & captured on Razorpay
       if (res.autoPaid && res.order) {
         setConfirmedOrder({
@@ -130,10 +223,12 @@ function App() {
         setIsRazorpayOpen(true);
       }
     } catch (err) {
+      const errMsg = `Error processing purchase: ${err.message}`;
       setSteps(prev => [
         ...prev,
-        { text: `Error processing purchase: ${err.message}`, status: 'failed' }
+        { text: errMsg, status: 'failed' }
       ]);
+      playVoiceFeedback(`Sorry, your purchase could not be completed. ${err.message}`, null);
     } finally {
       setLoading(false);
     }
@@ -178,6 +273,23 @@ function App() {
         </div>
 
         <div className="header-actions">
+          {/* Voice AI Audio Feedback Toggle */}
+          <button 
+            className="key-status-btn"
+            onClick={() => {
+              setIsVoiceEnabled(!isVoiceEnabled);
+              if (isVoiceEnabled && window.speechSynthesis) window.speechSynthesis.cancel();
+            }}
+            style={{
+              background: isVoiceEnabled ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+              borderColor: isVoiceEnabled ? 'rgba(59, 130, 246, 0.35)' : 'var(--border-subtle)',
+              color: isVoiceEnabled ? '#60a5fa' : 'var(--text-secondary)'
+            }}
+            title={isVoiceEnabled ? 'ElevenLabs Voice Feedback: ACTIVE' : 'Voice Feedback: MUTED'}
+          >
+            <span>{isVoiceEnabled ? '🔊 Voice Feedback: ON' : '🔇 Voice: Muted'}</span>
+          </button>
+
           {/* Pre-Saved Payment Badge / Button */}
           <button 
             className="key-status-btn"
@@ -242,15 +354,30 @@ function App() {
             </div>
 
             <p className="purchase-card-sub">
-              Enter your purchase request and price limit. The AI Agent will automatically discover, verify, and complete checkout with pre-authorized payment details.
+              Enter your purchase request or click 🎙️ to speak. The AI Agent will discover, verify, and complete checkout with pre-authorized payment details.
             </p>
 
             <form onSubmit={(e) => { e.preventDefault(); handlePurchaseSubmit(); }} className="purchase-form">
               <div className="purchase-input-wrap">
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`btn-voice-mic ${isListening ? 'listening' : ''}`}
+                  title={isListening ? 'Listening... click to stop' : 'Click to Speak (Voice Agent)'}
+                >
+                  {isListening ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className="mic-pulse-dot"></span>
+                      <span>🎙️ Listening...</span>
+                    </span>
+                  ) : (
+                    <span>🎙️ Voice</span>
+                  )}
+                </button>
                 <input
                   type="text"
                   className="purchase-input-field"
-                  placeholder="e.g. Buy me a JavaScript mastery course of price upto 500"
+                  placeholder={isListening ? 'Listening... speak your order now...' : 'e.g. Buy me a JavaScript mastery course of price upto 500 or speak with mic'}
                   value={purchaseQuery}
                   onChange={(e) => setPurchaseQuery(e.target.value)}
                   disabled={loading}

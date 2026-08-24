@@ -591,6 +591,64 @@
       color: #0f172a;
     }
 
+    /* Voice Mic Button & Pulse */
+    .rzp-agent-mic-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #0284c7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .rzp-agent-mic-btn:hover {
+      background: #e0f2fe;
+      border-color: #0284c7;
+    }
+    .rzp-agent-mic-btn.listening {
+      background: #ef4444 !important;
+      border-color: #dc2626 !important;
+      color: #ffffff !important;
+      animation: rzp-mic-pulse 1.2s infinite;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+    }
+    @keyframes rzp-mic-pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+      70% { transform: scale(1.08); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .rzp-voice-wave-banner {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 7px 14px;
+      background: #fef2f2;
+      border-top: 1px solid #fecaca;
+      font-size: 11.5px;
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .rzp-voice-wave-banner.active {
+      display: flex;
+    }
+    .rzp-voice-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: rzp-dot-blink 1s infinite;
+    }
+    @keyframes rzp-dot-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
     /* Segmented Tab Controls in Settings */
     .rzp-segmented-tabs {
       display: flex;
@@ -732,6 +790,7 @@
           </div>
         </div>
         <div class="rzp-agent-header-actions">
+          <button class="rzp-agent-btn-icon" id="rzp-agent-voice-toggle-btn" title="Voice Audio Feedback (ElevenLabs)">🔊</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-settings-btn" title="Payment & Authorization Settings">⚙️</button>
           <button class="rzp-agent-btn-icon" id="rzp-agent-close-btn" title="Close">✕</button>
         </div>
@@ -768,7 +827,7 @@
         <div class="rzp-agent-empty" id="rzp-agent-empty-state">
           <div class="rzp-agent-empty-icon">⚡</div>
           <div class="rzp-agent-empty-title">Razorpay AI Assistant</div>
-          <div class="rzp-agent-empty-desc">Tell the assistant what you need. It checks live availability, applies your saved preferences, and secures your order instantly.</div>
+          <div class="rzp-agent-empty-desc">Tell the assistant what you need via Voice or Text. It checks live availability, applies your saved preferences, and secures your order instantly.</div>
           
           <div class="rzp-agent-chips" id="rzp-agent-suggestion-chips">
             <!-- Populated dynamically based on merchant niche -->
@@ -776,13 +835,25 @@
         </div>
       </div>
 
+      <!-- Voice Listening Wave Banner -->
+      <div class="rzp-voice-wave-banner" id="rzp-voice-wave-banner">
+        <span class="rzp-voice-status-dot"></span>
+        <span>🎙️ Listening... Speak your order (e.g. "Buy 2 chicken biryani with SBI netbanking")</span>
+      </div>
+
       <!-- Footer / Input -->
       <div class="rzp-agent-footer">
+        <button class="rzp-agent-mic-btn" id="rzp-agent-mic-btn" title="Voice Agent: Speak to Order">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        </button>
         <input 
           type="text" 
           class="rzp-agent-input" 
           id="rzp-agent-input" 
-          placeholder="Ask a question or tell the assistant what to order..." 
+          placeholder="Ask or click 🎙️ mic to speak your order..." 
         />
         <button class="rzp-agent-send-btn" id="rzp-agent-send-btn">
           Buy
@@ -1192,6 +1263,141 @@
 
   fetchMerchantProductsAndRenderNicheChips();
 
+  // Voice Agent State
+  let isVoiceEnabled = true;
+  let isListening = false;
+  let currentAudio = null;
+  let recognition = null;
+
+  const micBtn = document.getElementById('rzp-agent-mic-btn');
+  const voiceToggleBtn = document.getElementById('rzp-agent-voice-toggle-btn');
+  const voiceWaveBanner = document.getElementById('rzp-voice-wave-banner');
+
+  // Initialize Speech Recognition if supported
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-IN';
+
+    recognition.onstart = () => {
+      isListening = true;
+      if (micBtn) micBtn.classList.add('listening');
+      if (voiceWaveBanner) voiceWaveBanner.classList.add('active');
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (inputEl) inputEl.value = transcript;
+    };
+
+    recognition.onerror = (event) => {
+      console.warn('[Voice Recognition Error]:', event.error);
+      stopListening();
+    };
+
+    recognition.onend = () => {
+      stopListening();
+      // Auto-submit if recognized transcript is present
+      if (inputEl && inputEl.value.trim().length > 1) {
+        handleSend();
+      }
+    };
+  }
+
+  function startListening() {
+    if (!recognition) {
+      alert('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
+      return;
+    }
+    try {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      recognition.start();
+    } catch (e) {
+      console.warn('Recognition start note:', e.message);
+    }
+  }
+
+  function stopListening() {
+    isListening = false;
+    if (micBtn) micBtn.classList.remove('listening');
+    if (voiceWaveBanner) voiceWaveBanner.classList.remove('active');
+  }
+
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      if (isListening) {
+        if (recognition) recognition.stop();
+        stopListening();
+      } else {
+        startListening();
+      }
+    });
+  }
+
+  if (voiceToggleBtn) {
+    voiceToggleBtn.addEventListener('click', () => {
+      isVoiceEnabled = !isVoiceEnabled;
+      voiceToggleBtn.textContent = isVoiceEnabled ? '🔊' : '🔇';
+      voiceToggleBtn.title = isVoiceEnabled ? 'Voice Audio Feedback: ON (ElevenLabs)' : 'Voice Audio Feedback: MUTED';
+      if (!isVoiceEnabled) {
+        if (currentAudio) currentAudio.pause();
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      }
+    });
+  }
+
+  // Play Spoken Voice Feedback (ElevenLabs TTS with browser synthesis fallback)
+  function playVoiceFeedback(spokenText, audioUrl) {
+    if (!isVoiceEnabled || !spokenText) return;
+
+    try {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+      }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+      // 1. Try ElevenLabs Audio first if audioUrl is provided
+      if (audioUrl && audioUrl.startsWith('data:audio/')) {
+        currentAudio = new Audio(audioUrl);
+        currentAudio.play().catch((err) => {
+          console.warn('[ElevenLabs Playback Fallback]:', err.message);
+          speakWithBrowser(spokenText);
+        });
+      } else {
+        // 2. High quality browser SpeechSynthesis fallback
+        speakWithBrowser(spokenText);
+      }
+    } catch (err) {
+      console.warn('[Voice Feedback]:', err.message);
+    }
+  }
+
+  function speakWithBrowser(text) {
+    if (!window.speechSynthesis) return;
+    const cleanText = text.replace(/[*_`#]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.lang = 'en-US';
+
+    // Pick best available natural voice if present
+    const voices = window.speechSynthesis.getVoices();
+    const naturalVoice = voices.find(v => (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Karen')) && v.lang.startsWith('en'));
+    if (naturalVoice) utterance.voice = naturalVoice;
+
+    window.speechSynthesis.speak(utterance);
+  }
+
   // Handle Send Purchase Prompt
   async function handleSend() {
     const query = inputEl.value.trim();
@@ -1223,7 +1429,8 @@
           deliveryAddress: currentAddress,
           autoExecutePayment: savedPayment.enabled !== false,
           savedPaymentMethod: savedPayment,
-          merchantApiBase: config.merchantApi
+          merchantApiBase: config.merchantApi,
+          enableVoice: isVoiceEnabled
         })
       });
 
@@ -1247,12 +1454,31 @@
           paymentMethod: data.order?.paymentMethod || savedPayment,
           userEmail: currentUser.email
         });
+
+        // 🔊 Spoken Voice Feedback on SUCCESS
+        if (data.spokenFeedback) {
+          playVoiceFeedback(data.spokenFeedback, data.audioUrl);
+        }
       } else if (data.reply) {
         appendMessage({ role: 'agent', text: data.reply });
+
+        // 🔊 Spoken Voice Feedback on Conversational Query
+        if (data.spokenFeedback) {
+          playVoiceFeedback(data.spokenFeedback, data.audioUrl);
+        }
+      } else if (!data.success) {
+        const errorMsg = data.message || 'Purchase could not be completed.';
+        appendMessage({ role: 'agent', text: `❌ **Purchase Request Not Completed**\n\n${errorMsg}` });
+
+        // 🔊 Spoken Voice Feedback on FAILURE / DENIAL
+        const failText = data.spokenFeedback || `Sorry, your order could not be completed. ${errorMsg}`;
+        playVoiceFeedback(failText, data.audioUrl);
       }
 
     } catch (err) {
-      appendMessage({ role: 'agent', text: `❌ Error processing purchase: ${err.message}` });
+      const errText = `❌ Error processing purchase: ${err.message}`;
+      appendMessage({ role: 'agent', text: errText });
+      playVoiceFeedback(`Sorry, an error occurred while processing your purchase.`, null);
     } finally {
       isLoading = false;
       sendBtn.disabled = false;

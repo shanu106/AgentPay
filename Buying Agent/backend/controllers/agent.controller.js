@@ -1,6 +1,7 @@
 const { processPurchaseRequest } = require('../services/buyerAgent');
 const { executeTool, buyerOrders, auditLogs } = require('../tools/index');
 const userStore = require('../services/userStore.service');
+const voiceService = require('../services/voice.service');
 const { getActiveUserEmail } = require('./user.controller');
 
 const handlePurchase = async (req, res) => {
@@ -14,7 +15,8 @@ const handlePurchase = async (req, res) => {
       addressId,
       autoExecutePayment = true,
       savedPaymentMethod,
-      merchantApiBase
+      merchantApiBase,
+      enableVoice = true
     } = req.body;
 
     if (!message || message.trim() === '') {
@@ -42,12 +44,34 @@ const handlePurchase = async (req, res) => {
       merchantApiBase
     });
 
+    // Generate Spoken Voice Feedback (ElevenLabs TTS with browser fallback)
+    const spokenFeedback = voiceService.createSpokenFeedback(response);
+    response.spokenFeedback = spokenFeedback;
+
+    if (enableVoice !== false) {
+      try {
+        const voiceResult = await voiceService.generateSpeech({ text: spokenFeedback });
+        if (voiceResult.success && voiceResult.audioUrl) {
+          response.audioUrl = voiceResult.audioUrl;
+          response.voiceProvider = 'elevenlabs';
+        } else {
+          response.voiceProvider = 'browser-synthesis';
+        }
+      } catch (vErr) {
+        console.warn('[Voice generation note]:', vErr.message);
+        response.voiceProvider = 'browser-synthesis';
+      }
+    }
+
     res.json(response);
   } catch (error) {
     console.error('Agent Purchase Request Error:', error);
+    const failFeedback = `Sorry, your purchase could not be completed. ${error.message || 'An error occurred.'}`;
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to process purchase request.'
+      message: error.message || 'Failed to process purchase request.',
+      spokenFeedback: failFeedback,
+      voiceProvider: 'browser-synthesis'
     });
   }
 };
@@ -145,11 +169,16 @@ const getAuditLogs = (req, res) => {
 const getConfig = (req, res) => {
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== '' && !process.env.GEMINI_API_KEY.includes('YOUR_GEMINI') && !process.env.GEMINI_API_KEY.includes('XXXX'));
   const hasRazorpayKey = Boolean(process.env.RAZORPAY_KEY_ID && !process.env.RAZORPAY_KEY_ID.includes('XXXX'));
+  const hasElevenLabsKey = Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.trim() !== '' && !process.env.ELEVENLABS_API_KEY.includes('your_elevenlabs'));
 
   res.json({
     hasGeminiKey,
     hasRazorpayKey,
+    hasElevenLabsKey,
     geminiKeyMasked: hasGeminiKey ? `${process.env.GEMINI_API_KEY.slice(0, 6)}...${process.env.GEMINI_API_KEY.slice(-4)}` : null,
+    elevenLabsKeyMasked: hasElevenLabsKey ? `${process.env.ELEVENLABS_API_KEY.slice(0, 4)}...${process.env.ELEVENLABS_API_KEY.slice(-4)}` : null,
+    elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || voiceService.DEFAULT_VOICE_ID,
+    elevenLabsModelId: process.env.ELEVENLABS_MODEL_ID || voiceService.DEFAULT_MODEL_ID,
     razorpayKeyId: process.env.RAZORPAY_KEY_ID,
     model: 'gemini-2.0-flash',
     merchantUrl: process.env.MERCHANT_API_BASE || 'http://localhost:8000/api'
@@ -157,21 +186,47 @@ const getConfig = (req, res) => {
 };
 
 const updateConfigKey = (req, res) => {
-  const { apiKey } = req.body;
+  const { apiKey, elevenLabsKey, elevenLabsVoiceId } = req.body;
   if (apiKey) {
     process.env.GEMINI_API_KEY = apiKey.trim();
   }
+  if (elevenLabsKey) {
+    process.env.ELEVENLABS_API_KEY = elevenLabsKey.trim();
+  }
+  if (elevenLabsVoiceId) {
+    process.env.ELEVENLABS_VOICE_ID = elevenLabsVoiceId.trim();
+  }
   res.json({
     success: true,
-    message: 'Gemini API Key updated successfully',
-    hasKey: Boolean(process.env.GEMINI_API_KEY)
+    message: 'Configuration updated successfully',
+    hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasElevenLabsKey: Boolean(process.env.ELEVENLABS_API_KEY)
   });
+};
+
+const generateTTS = async (req, res) => {
+  try {
+    const { text, voiceId, modelId, apiKey } = req.body;
+    if (!text || text.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Text is required for TTS.' });
+    }
+
+    const result = await voiceService.generateSpeech({ text, voiceId, modelId, apiKey });
+    res.json(result);
+  } catch (error) {
+    console.error('TTS Generation Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate speech audio.'
+    });
+  }
 };
 
 const getHealth = (req, res) => {
   res.json({
     status: 'ok',
     service: 'AI Shopping Buyer Agent Backend',
+    voiceService: 'ElevenLabs Voice AI',
     timestamp: new Date().toISOString()
   });
 };
@@ -186,5 +241,7 @@ module.exports = {
   getAuditLogs,
   getConfig,
   updateConfigKey,
+  generateTTS,
   getHealth
 };
+
