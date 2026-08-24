@@ -134,6 +134,9 @@ function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  // Voice Recognition Ref
+  const recognitionRef = useRef(null);
+
   // Toggle Voice Input Microphone
   const toggleListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -142,28 +145,42 @@ function App() {
       return;
     }
 
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+
     if (isListening) {
       setIsListening(false);
+      try {
+        recognitionRef.current?.stop();
+      } catch (_) {}
       return;
     }
 
     try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch (_) {}
+      }
+
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = language === 'hi' ? 'hi-IN' : 'en-IN';
+      recognition.lang = language === 'hi' ? 'hi-IN' : (navigator.language || 'en-US');
+      let capturedTranscript = '';
 
       recognition.onstart = () => {
         setIsListening(true);
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
       };
 
       recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
+        let fullTranscript = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          fullTranscript += event.results[i][0].transcript;
         }
-        setPurchaseQuery(transcript);
+        fullTranscript = fullTranscript.trim();
+        console.log('[Speech Input]:', fullTranscript);
+        if (fullTranscript) {
+          capturedTranscript = fullTranscript;
+          setPurchaseQuery(fullTranscript);
+        }
       };
 
       recognition.onerror = (event) => {
@@ -173,8 +190,12 @@ function App() {
 
       recognition.onend = () => {
         setIsListening(false);
+        if (capturedTranscript && capturedTranscript.trim().length > 1) {
+          handlePurchaseSubmit(capturedTranscript);
+        }
       };
 
+      recognitionRef.current = recognition;
       recognition.start();
     } catch (err) {
       console.warn('Failed to start speech recognition:', err.message);

@@ -1278,39 +1278,6 @@
 
   // Initialize Speech Recognition if supported
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SpeechRecognition) {
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
-
-    recognition.onstart = () => {
-      isListening = true;
-      if (micBtn) micBtn.classList.add('listening');
-      if (voiceWaveBanner) voiceWaveBanner.classList.add('active');
-    };
-
-    recognition.onresult = (event) => {
-      let transcript = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        transcript += event.results[i][0].transcript;
-      }
-      if (inputEl) inputEl.value = transcript;
-    };
-
-    recognition.onerror = (event) => {
-      console.warn('[Voice Recognition Error]:', event.error);
-      stopListening();
-    };
-
-    recognition.onend = () => {
-      stopListening();
-      // Auto-submit if recognized transcript is present
-      if (inputEl && inputEl.value.trim().length > 1) {
-        handleSend();
-      }
-    };
-  }
 
   // Language Switching Handler
   if (langBtn) {
@@ -1350,7 +1317,7 @@
   }
 
   function startListening() {
-    if (!recognition) {
+    if (!SpeechRecognition) {
       alert('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
       return;
     }
@@ -1360,12 +1327,49 @@
         currentAudio = null;
       }
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+
       if (recognition) {
-        recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+        try { recognition.abort(); } catch (_) {}
       }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = currentLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+
+      recognition.onstart = () => {
+        isListening = true;
+        if (micBtn) micBtn.classList.add('listening');
+        if (voiceWaveBanner) voiceWaveBanner.classList.add('active');
+      };
+
+      recognition.onresult = (event) => {
+        let fullTranscript = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          fullTranscript += event.results[i][0].transcript;
+        }
+        fullTranscript = fullTranscript.trim();
+        console.log('[SDK Speech Recognized]:', fullTranscript);
+        if (inputEl && fullTranscript) inputEl.value = fullTranscript;
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('[Voice Recognition Error]:', event.error);
+        stopListening();
+      };
+
+      recognition.onend = () => {
+        stopListening();
+        // Auto-submit if recognized transcript is present
+        if (inputEl && inputEl.value.trim().length > 1) {
+          handleSend();
+        }
+      };
+
       recognition.start();
     } catch (e) {
       console.warn('Recognition start note:', e.message);
+      stopListening();
     }
   }
 
@@ -1378,7 +1382,9 @@
   if (micBtn) {
     micBtn.addEventListener('click', () => {
       if (isListening) {
-        if (recognition) recognition.stop();
+        if (recognition) {
+          try { recognition.stop(); } catch (_) {}
+        }
         stopListening();
       } else {
         startListening();
