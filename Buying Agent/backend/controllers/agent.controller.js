@@ -28,7 +28,7 @@ const handlePurchase = async (req, res) => {
     }
 
     const activeUserEmail = getActiveUserEmail();
-    const targetEmail = (userEmail || customerEmail || activeUserEmail).toLowerCase().trim();
+    const targetEmail = (userEmail || customerEmail || activeUserEmail || 'nawaz@gmail.com').toLowerCase().trim();
     const user = await userStore.getUser(targetEmail);
     const activeAddress = await userStore.getActiveAddress(targetEmail, message);
     const defaultPm = savedPaymentMethod || (await userStore.getDefaultPaymentMethod(targetEmail));
@@ -36,8 +36,9 @@ const handlePurchase = async (req, res) => {
     const response = await processPurchaseRequest({
       message,
       customApiKey,
+      userId: user?.id,
       userEmail: targetEmail,
-      customerName: customerName || user.name,
+      customerName: customerName || user?.name,
       customerEmail: targetEmail,
       deliveryAddress: activeAddress,
       autoExecutePayment,
@@ -79,37 +80,45 @@ const handlePurchase = async (req, res) => {
   }
 };
 
-const getSavedPaymentMethod = (req, res) => {
-  const activeUserEmail = getActiveUserEmail();
-  const email = (req.query.email || activeUserEmail).toLowerCase().trim();
-  const user = userStore.getUser(email);
-  const paymentMethod = userStore.getDefaultPaymentMethod(email);
-  res.json({
-    success: true,
-    paymentMethod,
-    paymentMethods: user.paymentMethods || []
-  });
+const getSavedPaymentMethod = async (req, res) => {
+  try {
+    const activeUserEmail = getActiveUserEmail();
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const user = await userStore.getUser(email);
+    const paymentMethod = await userStore.getDefaultPaymentMethod(email);
+    res.json({
+      success: true,
+      paymentMethod,
+      paymentMethods: user?.paymentMethods || []
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-const updateSavedPaymentMethod = (req, res) => {
-  const activeUserEmail = getActiveUserEmail();
-  const email = (req.body.email || activeUserEmail).toLowerCase().trim();
-  const { methodId, autoDebitLimit, holder, isDefault } = req.body;
-  
-  if (methodId && (isDefault || isDefault === undefined)) {
-    userStore.setDefaultPaymentMethod(email, methodId);
-  }
-  
-  const updatedMethod = userStore.updatePaymentMethod(email, methodId, { autoDebitLimit, holder, isDefault });
-  const defaultMethod = userStore.getDefaultPaymentMethod(email);
-  const user = userStore.getUser(email);
+const updateSavedPaymentMethod = async (req, res) => {
+  try {
+    const activeUserEmail = getActiveUserEmail();
+    const email = (req.body.email || activeUserEmail).toLowerCase().trim();
+    const { methodId, autoDebitLimit, holder, isDefault } = req.body;
+    
+    if (methodId && (isDefault || isDefault === undefined)) {
+      await userStore.setDefaultPaymentMethod(email, methodId);
+    }
+    
+    await userStore.updatePaymentMethod(email, methodId, { autoDebitLimit, holder, isDefault });
+    const defaultMethod = await userStore.getDefaultPaymentMethod(email);
+    const user = await userStore.getUser(email);
 
-  res.json({
-    success: true,
-    paymentMethod: defaultMethod,
-    paymentMethods: user.paymentMethods,
-    message: `Default payment method updated to ${defaultMethod.label || defaultMethod.brand}`
-  });
+    res.json({
+      success: true,
+      paymentMethod: defaultMethod,
+      paymentMethods: user?.paymentMethods || [],
+      message: `Default payment method updated to ${defaultMethod?.label || defaultMethod?.brand || 'selected method'}`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 const verifyCheckout = async (req, res) => {

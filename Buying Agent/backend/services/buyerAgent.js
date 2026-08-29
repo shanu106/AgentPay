@@ -202,18 +202,24 @@ const handleConversationalAndGuardrailQueries = async (message, user, sessionCon
 const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   const text = message.toLowerCase();
   
-  // Unicode-safe normalization of Hindi / Hinglish terms to English
+  // 1. Action phrases
   let normalizedText = text
-    .replace(/एक/g, '1')
-    .replace(/दो/g, '2')
-    .replace(/तीन/g, '3')
-    .replace(/चार/g, '4')
-    .replace(/पांच/g, '5')
-    .replace(/चिकन बिरयानी/g, 'chicken biryani')
-    .replace(/पनीर बटर मसाला/g, 'paneer butter masala')
-    .replace(/पनीर/g, 'paneer')
+    .replace(/(?:आर्डर\s+कर\s+दो|ऑर्डर\s+कर\s+दो|आर्डर\s+करो|आर्डर\s+करें|ऑर्डर\s+करो|ऑर्डर\s+करें|खरीदो|खरीदें|मंगवाओ|भेजो)/g, ' buy ')
+    .replace(/(?:भुगतान\s+करो|पेमेंट\s+करो|पे\s+कर\s+दो|पे\s+करो|पे)/g, ' pay ');
+
+  // 2. Product terms (convert compound phrases before digits)
+  normalizedText = normalizedText
+    .replace(/गेम\s+चार्ज|गैन\s+चार्जर|फास्ट\s+चार्जर|चार्जर|चार्ज/g, 'fast charger')
+    .replace(/मैकेनिकल\s+कीबोर्ड/g, 'mechanical keyboard')
+    .replace(/जावास्क्रिप्ट\s+मास्टरी(\s+का)?\s+कोर्स|जावास्क्रिप्ट\s+मास्टरी|जावास्क्रिप्ट\s+कोर्स/g, 'javascript mastery course')
+    .replace(/पायथन(\s+फॉर)?\s+डाटा\s+साइंस(\s+का)?\s+कोर्स/g, 'python for data science')
+    .replace(/चिकन\s+बिरयानी/g, 'chicken biryani')
+    .replace(/पनीर\s+बटर\s+मसाला/g, 'paneer butter masala')
+    .replace(/पिज़्ज़ा|पिज़ा/g, 'pizza')
     .replace(/माउस/g, 'mouse')
     .replace(/कीबोर्ड/g, 'keyboard')
+    .replace(/जावास्क्रिप्ट/g, 'javascript')
+    .replace(/कोर्स/g, 'course')
     .replace(/एसबीआई|स्टेट बैंक/g, 'sbi')
     .replace(/बॉब|बैंक ऑफ बड़ौदा/g, 'bob')
     .replace(/एचडीएफसी/g, 'hdfc')
@@ -222,10 +228,20 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     .replace(/कोटक/g, 'kotak')
     .replace(/नेटबैंकिंग|नेट बैंकिंग/g, 'netbanking')
     .replace(/यूपीआई|गूगल पे|फोनपे/g, 'upi')
-    .replace(/कार्ड|क्रेडिट कार्ड|डेबिट कार्ड/g, 'card')
-    .replace(/(?:आर्डर करो|आर्डर करें|ऑर्डर करो|ऑर्डर करें|खरीदो|खरीदें|मंगवाओ|भेजो)/g, 'buy')
-    .replace(/(?:भुगतान|पेमेंट|पे करो|पे)/g, 'pay')
-    .replace(/(?:और|से|का|के|की|में|को|पर)/g, ' ');
+    .replace(/कार्ड|क्रेडिट कार्ड|डेबिट कार्ड/g, 'card');
+
+  // 3. Number words with boundary matching
+  normalizedText = normalizedText
+    .replace(/(?:^|\s)एक(?=\s|$)/g, ' 1 ')
+    .replace(/(?:^|\s)दो(?=\s|$)/g, ' 2 ')
+    .replace(/(?:^|\s)तीन(?=\s|$)/g, ' 3 ')
+    .replace(/(?:^|\s)चार(?=\s|$)/g, ' 4 ')
+    .replace(/(?:^|\s)पांच(?=\s|$)/g, ' 5 ');
+
+  // 4. Fillers & conjunctions
+  normalizedText = normalizedText
+    .replace(/(?:^|\s)(?:और|तथा)(?=\s|$)/g, ' and ')
+    .replace(/(?:^|\s)(?:से|का|के|की|में|को|पर|ठीक\s+है|मुझे|कृपया|चाहिए)(?=\s|$)/g, ' ');
 
   // 1. Extract budget / spending limit
   let maxPrice = defaultLimit;
@@ -241,14 +257,14 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   // 2. Clean conversational commentary & payment clauses
   let cleaned = normalizedText
     .replace(/^(?:i\s+want\s+to\s+|can\s+you\s+|pls\s+|please\s+|plz\s+|help\s+me\s+)?(?:buy|bue|by|bay|order|purchase|get|want|find|give|deliver|send)\s+(?:me\s+)?(?:a\s+|an\s+|to\s+)?/gi, '')
+    .replace(/\s+(and\s+)?(?:pay|paying|payment|make\s+payment)?\s*(?:using|with|via|by|through|from|on)\s+(?:sbi|bob|hdfc|icici|axis|kotak|canara|netbanking|net\s+banking|upi|gpay|google\s+pay|phonepe|paytm|card|credit\s+card|debit\s+card|visa|mastercard|bank\s+of\s+baroda|state\s+bank).*$/gi, '')
+    .replace(/\s+(and\s+)?(?:pay|paying|payment)\s+(?:using|with|via|by|through|from|on).*$/gi, '')
     .replace(/\s+(sbi|bob|hdfc|icici|axis|kotak|canara|netbanking|net\s+banking|upi|gpay|phonepe|paytm|card|visa|mastercard).*$/gi, '')
-    .replace(/\s+(and\s+)?(make\s+)?(payment|pay|paying|paid)\s+(using|with|via|by|through|of|on|from)\s+.*$/gi, '')
-    .replace(/\s+(and\s+)?(using|with|via|through|by|from|on)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
-    .replace(/\s+(and\s+)?(from)\s+(visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
-    .replace(/\s+(and\s+)?(deliver|deliver\s+to|send\s+to|address)\s+(to\s+)?(home|office|work|bangalore|bengaluru|flat|house).*$/gi, '')
+    .replace(/\s+(and\s+)?(?:from)\s+(?:visa|mastercard|card|credit\s+card|debit\s+card|bob|sbi|hdfc|icici|canara|bank\s+of\s+baroda|state\s+bank|axis|kotak|axis\s+bank|kotak\s+bank|upi|gpay|google\s+pay|phonepe|paytm|netbanking|net\s+banking).*$/gi, '')
+    .replace(/\s+(and\s+)?(?:deliver|deliver\s+to|send\s+to|address)\s+(?:to\s+)?(?:home|office|work|bangalore|bengaluru|flat|house).*$/gi, '')
     .replace(/\s+(for the prompt|then total|multiple product|when user|fix the issue|total should be|asking for|but receipt got|order autonomously).*$/gi, '')
     .replace(/\s+(of\s+price|at\s+price|price|budget|worth|under|below|up to|upto|for)\s*(?:₹|rs\.?|inr)?\s*[\d,]+.*$/gi, '')
-    .replace(/(?:buy|order|purchase|get|pay|fast|quickly|asap|urgent|urgently|now|instantly|please|pls|plz|जल्दी|तुरंत|कृपया)/gi, '')
+    .replace(/(?:buy|order|purchase|get|fast|quickly|asap|urgent|urgently|now|instantly|please|pls|plz|जल्दी|तुरंत|कृपया)/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -334,7 +350,8 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     if (!s) return [];
 
     // Discard any segment that is actually a payment instruction or delivery destination
-    if (/\b(make\s+payment|payment|netbanking|net\s+banking|bank\s+of\s+baroda|baroda|sbi|hdfc|icici|canara|axis|upi|gpay|google\s+pay|phonepe|paytm|credit\s+card|debit\s+card|visa|mastercard|deliver|delivery|address|home|office|koramangala|residency)\b/i.test(s)) {
+    if (/^(using|pay|paying|payment|and|with|via|through|from|for|on)$/i.test(s) ||
+        /\b(make\s+payment|payment|netbanking|net\s+banking|bank\s+of\s+baroda|baroda|sbi|hdfc|icici|canara|axis|upi|gpay|google\s+pay|phonepe|paytm|credit\s+card|debit\s+card|visa|mastercard|deliver|delivery|address|home|office|koramangala|residency)\b/i.test(s)) {
       return [];
     }
     const matches = [...s.matchAll(new RegExp(`(?:^|\\s+)(\\d+|${qtyWords})\\s*(?:x|pcs|pieces|plates|sets|units|box|boxes|dishes)?\\s*(?:of\\s+)?([a-z0-9\\s&'\\-_]+?)(?=(?:\\s+(?:\\d+|${qtyWords})\\b)|$)`, 'gi'))];
@@ -838,9 +855,20 @@ const runSimulatedBuyerAgent = async ({
   //          category policy, payment method, and confirmation threshold
   // ═══════════════════════════════════════════════════════════════
   let policyEval = null;
-  if (sessionContext.userId) {
+  let effectiveUserId = sessionContext.userId;
+  if (!effectiveUserId && (sessionContext.customerEmail || sessionContext.userEmail)) {
+    try {
+      const u = await userStore.getUser(sessionContext.customerEmail || sessionContext.userEmail);
+      if (u && u.id) {
+        effectiveUserId = u.id;
+        sessionContext.userId = effectiveUserId;
+      }
+    } catch (_) {}
+  }
+
+  if (effectiveUserId) {
     policyEval = await PolicyEngine.evaluate({
-      userId: sessionContext.userId,
+      userId: effectiveUserId,
       amount: totalGrandAmount,
       currency: 'INR',
       merchantId: primaryItem?.merchantId,

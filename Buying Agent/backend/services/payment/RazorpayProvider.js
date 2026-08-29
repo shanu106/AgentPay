@@ -40,6 +40,44 @@ class RazorpayProvider {
   }
 
   /**
+   * Create an official Razorpay Order via Razorpay REST API
+   * @param {Object} params
+   * @param {number} params.amount - Amount in INR (not paise)
+   * @param {string} [params.currency='INR']
+   * @param {string} [params.receipt]
+   * @param {Object} [params.notes]
+   * @returns {Promise<Object>} Razorpay order object or error
+   */
+  async createOrder({ amount, currency = 'INR', receipt, notes = {} }) {
+    try {
+      const res = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': this.getAuthHeader()
+        },
+        body: JSON.stringify({
+          amount: Math.round(amount * 100),
+          currency,
+          receipt: receipt || `rcpt_${Date.now().toString().slice(-8)}`,
+          notes
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        console.warn('[RazorpayProvider] createOrder API error:', data.error);
+        return { success: false, error: data.error?.description || data.error?.reason || 'Failed to create Razorpay order' };
+      }
+
+      return { success: true, order: data, id: data.id, key: this.keyId };
+    } catch (err) {
+      console.warn('[RazorpayProvider] createOrder network error:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
    * Execute a payment using Razorpay test mode API
    * @param {Object} params
    * @param {string} params.razorpayOrderId - Razorpay order ID

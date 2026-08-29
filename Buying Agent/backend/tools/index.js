@@ -152,10 +152,12 @@ const executeTool = async (name, args, sessionContext = {}) => {
           restaurantId: p.restaurantId,
           brand: p.brand,
           category: p.category,
+          subcategory: p.subcategory,
           price: p.price,
           currency: p.currency,
           rating: p.rating,
-          merchantId: p.merchant?.id || p.merchantId || 'merchant_demo'
+          merchantId: p.merchant?.id || p.merchantId || 'merchant_demo',
+          merchantApiBase: p.merchantApiBase
         }))
       };
       await logAudit('TOOL_INVOCATION_SUCCESS', { tool: name, count: products.length }, { userEmail: customerEmail });
@@ -170,9 +172,12 @@ const executeTool = async (name, args, sessionContext = {}) => {
         description: product.description,
         price: product.price,
         currency: product.currency,
+        category: product.category,
+        subcategory: product.subcategory,
         rating: product.rating,
         available: product.available,
-        merchantId: product.merchant?.id || 'merchant_demo'
+        merchantId: product.merchant?.id || product.merchantId || 'merchant_demo',
+        merchantApiBase: product.merchantApiBase || merchantApiBase
       };
       await logAudit('TOOL_INVOCATION_SUCCESS', { tool: name, productId: args.productId }, { userEmail: customerEmail });
       return result;
@@ -275,27 +280,54 @@ const executeTool = async (name, args, sessionContext = {}) => {
       }
 
       // Create order on Merchant Backend
-      const merchantOrderResponse = await merchantService.createMerchantOrder({
-        courseId: primaryProduct.id,
-        productId: primaryProduct.id,
-        quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0),
-        items: evaluatedItems,
-        totalAmount,
-        customerName,
-        customerEmail,
-        merchantApiBase
+      let merchantOrderResponse = null;
+      try {
+        merchantOrderResponse = await merchantService.createMerchantOrder({
+          courseId: primaryProduct.id,
+          productId: primaryProduct.id,
+          quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0),
+          items: evaluatedItems,
+          totalAmount,
+          customerName,
+          customerEmail,
+          merchantApiBase
+        });
+      } catch (mErr) {
+        console.warn('Merchant order creation note:', mErr.message);
+      }
+
+      // Create Unified Razorpay Order with exact grand totalAmount
+      let rzpOrderId = null;
+      const rzpRes = await razorpayProvider.createOrder({
+        amount: totalAmount,
+        currency: primaryProduct.currency || 'INR',
+        receipt: `rcpt_${Date.now().toString().slice(-8)}`,
+        notes: {
+          customerName,
+          customerEmail,
+          itemsCount: evaluatedItems.length,
+          orderTitle: orderTitle.slice(0, 40)
+        }
       });
 
+      if (rzpRes.success && rzpRes.id) {
+        rzpOrderId = rzpRes.id;
+      } else if (merchantOrderResponse?.razorpayOrderId) {
+        rzpOrderId = merchantOrderResponse.razorpayOrderId;
+      } else {
+        rzpOrderId = `order_${Date.now().toString().slice(-8)}`;
+      }
+
       const internalOrderId = `ORD-${Date.now().toString().slice(-6)}`;
-      const rzpOrderId = merchantOrderResponse.razorpayOrderId || merchantOrderResponse.order?.id;
       const initialStatus = 'created';
 
       const orderRecord = {
         orderId: internalOrderId,
         idempotencyKey: idempotencyKey || `idem_${internalOrderId}`,
-        merchantOrderId: merchantOrderResponse.order?.id || merchantOrderResponse.orderId,
+        merchantOrderId: merchantOrderResponse?.order?.id || merchantOrderResponse?.orderId,
         razorpayOrderId: rzpOrderId,
         product: primaryProduct,
+        productTitle: orderTitle,
         items: evaluatedItems,
         quantity: evaluatedItems.reduce((acc, i) => acc + i.quantity, 0),
         amount: totalAmount,
@@ -303,7 +335,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
         status: initialStatus,
         paymentStatus: 'pending',
         statusHistory: [OrderStateMachine.createHistoryEntry('none', initialStatus, { reason: 'Initial order creation' })],
-        razorpayOrder: merchantOrderResponse.order || { id: rzpOrderId },
+        razorpayOrder: { id: rzpOrderId, key: razorpayProvider.keyId },
         customerName,
         customerEmail,
         merchantApiBase,
@@ -328,7 +360,7 @@ const executeTool = async (name, args, sessionContext = {}) => {
         status: initialStatus,
         productTitle: orderTitle,
         razorpayOrderId: rzpOrderId,
-        razorpayKey: merchantOrderResponse.order?.key || merchantOrderResponse.razorpayKey
+        razorpayKey: razorpayProvider.keyId
       };
     }
 
@@ -346,6 +378,8 @@ const executeTool = async (name, args, sessionContext = {}) => {
         order.statusHistory.push(OrderStateMachine.createHistoryEntry('created', 'payment_pending'));
       }
 
+      const key = order.razorpayOrder?.key || razorpayProvider.keyId || process.env.RAZORPAY_KEY_ID;
+
       return {
         paymentRequired: true,
         orderId: order.orderId,
@@ -353,10 +387,10 @@ const executeTool = async (name, args, sessionContext = {}) => {
         amount: order.amount,
         quantity: order.quantity || 1,
         currency: order.currency,
-        key: order.razorpayOrder?.key,
+        key,
         customerName: order.customerName,
         customerEmail: order.customerEmail,
-        productTitle: `${(order.quantity || 1) > 1 ? (order.quantity || 1) + 'x ' : ''}${order.product?.title}`
+        productTitle: order.productTitle || order.items?.map(i => `${i.quantity}x ${i.title}`).join(', ') || order.product?.title
       };
     }
 

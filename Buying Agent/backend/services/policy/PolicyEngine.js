@@ -142,17 +142,15 @@ class PolicyEngine {
 
     // 7. Check category restriction
     const allowedCategories = auth.allowed_categories || [];
-    if (Array.isArray(allowedCategories) && allowedCategories.length > 0 && productCategory) {
-      const categoryAllowed = allowedCategories.some(c =>
-        c === '*' || productCategory.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(productCategory.toLowerCase())
-      );
+    if (Array.isArray(allowedCategories) && allowedCategories.length > 0 && (productCategory || merchantId)) {
+      const categoryAllowed = PolicyEngine.isCategoryAllowed(allowedCategories, productCategory, merchantId);
       if (!categoryAllowed) {
         return {
           decision: 'DENY',
           reasonCodes: ['CATEGORY_NOT_ALLOWED'],
           authorization: auth,
           requiresConfirmation: false,
-          details: { productCategory, allowedCategories }
+          details: { productCategory, allowedCategories, merchantId }
         };
       }
     }
@@ -306,6 +304,65 @@ class PolicyEngine {
       console.warn('[PolicyEngine] Merchant check error:', err.message);
       return { allowed: true, reason: 'MERCHANT_CHECK_FAILED_PERMISSIVE' };
     }
+  }
+
+  /**
+   * Check if category or merchant domain is permitted by allowed_categories
+   */
+  static isCategoryAllowed(allowedCategories, productCategory, merchantId = null) {
+    if (!allowedCategories || !Array.isArray(allowedCategories) || allowedCategories.length === 0) {
+      return true;
+    }
+    if (allowedCategories.includes('*')) {
+      return true;
+    }
+
+    const CATEGORY_MAP = {
+      courses: [
+        'courses', 'course', 'education', 'learning', 'web development', 'data science',
+        'backend development', 'full stack', 'ai & ml', 'computer science', 'dsa',
+        'programming', 'software', 'tutorials', 'certifications', 'bootcamps', 'classes'
+      ],
+      food: [
+        'food', 'dining', 'restaurant', 'biryani', 'pizza', 'burgers', 'waffles', 'waffle-wiches',
+        'desserts', 'sides & shakes', 'street food & chaat', 'authentic indian sweets',
+        'dimsums & appetizers', 'rice & noodles', 'chinese', 'north indian', 'rolls', 'beverages',
+        'meals', 'fast food', 'snacks', 'drinks', 'ice cream', 'sweets', 'main course'
+      ],
+      electronics: [
+        'electronics', 'hardware', 'gear', 'tech', 'mice', 'keyboards', 'audio', 'headphones',
+        'chargers', 'cables', 'accessories', 'monitors', 'laptops', 'gadgets',
+        'bags & sleeves', 'bags', 'sleeves', 'laptop sleeves', 'cases', 'covers', 'wearables',
+        'fitness trackers', 'smart band', 'smartwatch', 'stands', 'hubs', 'docks', 'storage',
+        'power banks', 'adapters', 'tech gear', 'computer accessories', 'peripherals'
+      ]
+    };
+
+    const targetCat = (productCategory || '').toLowerCase().trim();
+
+    return allowedCategories.some(allowed => {
+      const a = allowed.toLowerCase().trim();
+      if (!a) return false;
+
+      // 1. Direct match or substring
+      if (targetCat && (targetCat.includes(a) || a.includes(targetCat))) return true;
+
+      // 2. Synonyms match if targetCat is present
+      if (targetCat) {
+        const synonyms = CATEGORY_MAP[a] || [];
+        if (synonyms.some(syn => targetCat.includes(syn) || syn.includes(targetCat))) {
+          return true;
+        }
+      } else if (merchantId) {
+        // Fallback to merchant domain only when productCategory is empty
+        const mId = merchantId.toLowerCase();
+        if ((a === 'courses' || a === 'education') && (mId.includes('course') || mId.includes('learn'))) return true;
+        if ((a === 'food' || a === 'dining') && (mId.includes('zomato') || mId.includes('food') || mId.includes('restaurant') || mId.includes('express'))) return true;
+        if ((a === 'electronics' || a === 'hardware' || a === 'gear') && (mId.includes('ecommerce') || mId.includes('tech') || mId.includes('gear') || mId.includes('nova'))) return true;
+      }
+
+      return false;
+    });
   }
 }
 

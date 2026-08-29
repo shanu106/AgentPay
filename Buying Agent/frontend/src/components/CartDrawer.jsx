@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { applyCouponCode, updateCartQuantity, removeFromCart } from '../api/agentApi';
 
 function CartDrawer({ isOpen, onClose, cart, onCartUpdated, onProceedToCheckout }) {
@@ -49,7 +50,11 @@ function CartDrawer({ isOpen, onClose, cart, onCartUpdated, onProceedToCheckout 
       <div className="cart-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="cart-header">
           <h3>🛒 Your Shopping Bag ({cart?.totalItems || 0})</h3>
-          <button className="btn-close-drawer" onClick={onClose}>✕</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {(!cart?.items || cart.items.length === 0) ? (

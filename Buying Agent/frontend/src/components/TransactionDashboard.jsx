@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchUserOrders } from '../api/agentApi';
 
 const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = false }) => {
@@ -53,11 +54,15 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Filter Tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <div className="tx-filter-bar" style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
           {[
             { id: 'all', label: `All Transactions (${orders.length})` },
             { id: 'paid', label: `Captured / Paid (${orders.filter(o => o.payment_status === 'paid').length})` },
@@ -102,7 +107,7 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                     padding: '14px 16px'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <div className="tx-item-header" style={{ marginBottom: '8px' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontWeight: '700', fontSize: '14px', color: '#fff' }}>
@@ -120,7 +125,7 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                         </span>
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        Order ID: <code style={{ color: '#93c5fd' }}>{order.order_id}</code> • {new Date(order.created_at).toLocaleString()}
+                        Order ID: <code style={{ color: '#93c5fd' }}>{order.order_id || order.orderId || 'ORD-SYNC'}</code> • {order.created_at || order.createdAt ? new Date(order.created_at || order.createdAt).toLocaleString() : new Date().toLocaleString()}
                       </div>
                     </div>
 

@@ -12,6 +12,42 @@ const DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWA
 const DEFAULT_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
 
 /**
+ * Helper to build natural item list for speech (e.g. "2 Chicken Biryani, 1 Python Course, and 1 Keyboard")
+ */
+function formatItemsSpokenList(items = [], fallbackTitle = 'items', language = 'en') {
+  const isHindi = language === 'hi' || language === 'hindi';
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return fallbackTitle;
+  }
+
+  if (items.length === 1) {
+    const it = items[0];
+    const qty = it.quantity || 1;
+    const t = (it.title || it.productTitle || fallbackTitle).trim();
+    if (isHindi) {
+      return `${qty > 1 ? qty + ' ' : ''}${t}`;
+    }
+    return `${qty > 1 ? qty + ' units of ' : ''}${t}`;
+  }
+
+  // Multiple distinct item types
+  if (isHindi) {
+    const list = items.map(it => `${it.quantity || 1} ${(it.title || it.productTitle || 'सामान').trim()}`);
+    if (list.length === 2) {
+      return `${list[0]} और ${list[1]}`;
+    }
+    return `${list.slice(0, -1).join(', ')}, और ${list[list.length - 1]}`;
+  }
+
+  const list = items.map(it => `${it.quantity || 1} ${(it.title || it.productTitle || 'item').trim()}`);
+  if (list.length === 2) {
+    return `${list[0]} and ${list[1]}`;
+  }
+  return `${list.slice(0, -1).join(', ')}, and ${list[list.length - 1]}`;
+}
+
+/**
  * Generate natural spoken summary text in English or Hindi
  * @param {Object} result - Result from processPurchaseRequest or agent operation
  * @param {string} [language='en'] - 'en' (English) or 'hi' (Hindi)
@@ -28,39 +64,49 @@ function createSpokenFeedback(result = {}, language = 'en') {
     return result.reply || 'Here is the information you requested.';
   }
 
-  // Case 2: Purchase Succeeded & Paid
-  if (result.success && (result.autoPaid || result.order?.paymentStatus === 'paid' || result.selectedProduct)) {
-    const qty = result.order?.quantity || result.intent?.quantity || 1;
-    const title = result.selectedProduct?.title || result.order?.productTitle || result.intent?.query || 'सामान';
+  // Case 2: Authorization Denied / Spending Limit Exceeded / Policy Blocked
+  if (result.policy?.decision === 'DENY' || result.status === 'denied' || result.code === 'AMOUNT_EXCEEDS_LIMIT' || result.code === 'SPENDING_LIMIT_EXCEEDED' || (result.reply && result.reply.includes('Blocked by Policy Engine'))) {
+    const amount = result.totalAmount || result.amount || result.order?.amount || '';
+    if (isHindi) {
+      return `पॉलिसी इंजन द्वारा आपका ऑर्डर रोक दिया गया है क्योंकि यह आपकी अधिकृत सीमा से अधिक है। कोई भुगतान नहीं काटा गया है।`;
+    }
+    return `Your purchase was blocked by the policy engine as it exceeds your authorized spending limits. No payment was charged.`;
+  }
+
+  const orderItems = result.order?.items || result.intent?.items || (result.selectedProduct ? [{ quantity: result.order?.quantity || 1, title: result.selectedProduct.title }] : []);
+  const itemsSpoken = formatItemsSpokenList(orderItems, result.selectedProduct?.title || result.order?.productTitle || 'items', language);
+
+  // Case 3: Manual User Confirmation Required (Exceeds auto-approval limit)
+  if (result.requiresConfirmation || result.requiresCheckout || (result.order && !result.autoPaid && result.order?.paymentStatus !== 'paid')) {
+    const amount = result.order?.amount || result.totalAmount || result.selectedProduct?.price || 0;
+    if (isHindi) {
+      return `आपका ${itemsSpoken} का ₹${amount.toLocaleString()} का ऑर्डर तैयार है। यह राशि आपकी ऑटो-अप्रूवल सीमा से अधिक है, इसलिए मैन्युअल पुष्टि की आवश्यकता है। कृपया स्क्रीन पर चेकआउट पूरा करें।`;
+    }
+    return `I have prepared your order for ${itemsSpoken} for a total of ₹${amount.toLocaleString()}. Because this amount exceeds your auto-approval threshold, your confirmation is required. Please click Complete Checkout on your screen to proceed.`;
+  }
+
+  // Case 4: Purchase Succeeded & Auto-Paid
+  if (result.success && result.autoPaid && (result.order?.paymentStatus === 'paid' || result.verification?.paymentStatus === 'paid' || result.verification?.paymentId)) {
     const amount = result.order?.amount || result.selectedProduct?.price || 0;
     const paymentLabel = result.order?.paymentMethod?.label || result.intent?.paymentMethod?.label || 'Saved Payment';
     const cleanPay = paymentLabel.replace(/\(•••• \d+\)/g, '').trim();
 
     if (isHindi) {
-      return `आपका ${qty > 1 ? qty + ' ' : ''}${title} का ऑर्डर कन्फर्म हो गया है और ${cleanPay} के जरिए ₹${amount.toLocaleString()} का भुगतान सफलतापूर्वक पूरा हो गया है।`;
+      return `आपका ${itemsSpoken} का ऑर्डर कन्फर्म हो गया है और ${cleanPay} के जरिए ₹${amount.toLocaleString()} का भुगतान सफलतापूर्वक पूरा हो गया है।`;
     }
 
-    return `Your order for ${qty > 1 ? qty + ' units of ' : ''}${title} is confirmed and successfully paid via ${cleanPay} for ₹${amount.toLocaleString()}.`;
+    return `Your order for ${itemsSpoken} is confirmed and successfully paid via ${cleanPay} for ₹${amount.toLocaleString()}.`;
   }
 
-  // Case 3: Authorization Denied / Spending Limit Exceeded
-  if (result.status === 'denied' || result.code === 'AMOUNT_EXCEEDS_LIMIT') {
-    const amount = result.totalAmount || result.amount || 'मांगी गई राशि';
-    if (isHindi) {
-      return `आपका ऑर्डर पूरा नहीं किया जा सका क्योंकि ₹${amount} की कुल राशि आपकी पूर्व-अधिकृत सीमा से अधिक है।`;
-    }
-    return `Your order could not be placed because the total of ₹${amount} exceeds your pre-authorized spending limit.`;
-  }
-
-  // Case 4: Product Not Found or Out of Stock
-  if (result.code === 'PRODUCT_NOT_FOUND' || (result.message && result.message.toLowerCase().includes('not found'))) {
+  // Case 5: Product Not Found or Out of Stock
+  if (result.code === 'PRODUCT_NOT_FOUND' || (result.reply && result.reply.includes('Product Not Found'))) {
     if (isHindi) {
       return `दुकान के कैटलॉग में आपका पसंदीदा सामान नहीं मिला। कृपया कोई दूसरा आइटम या मूल्य सीमा आज़माएं।`;
     }
     return `I searched the store catalog but could not find matching products for your request. Please try another item or price range.`;
   }
 
-  // Case 5: General Error or Incomplete
+  // Case 6: General Error or Incomplete
   if (!result.success) {
     const cleanMsg = (result.message || result.error || 'The purchase could not be completed.').replace(/^Error:\s*/i, '');
     if (isHindi) {

@@ -23,6 +23,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Mount Modular Routers (Separation of Concerns)
 app.use('/api/agent', agentRoutes);
+app.use('/api', agentRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/webhooks', webhookRoutes);
 

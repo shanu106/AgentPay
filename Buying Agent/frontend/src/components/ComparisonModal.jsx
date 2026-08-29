@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchProducts } from '../api/agentApi';
 
 function ComparisonModal({ isOpen, onClose, initialProductIds = [], onAddToCart }) {
@@ -38,7 +39,11 @@ function ComparisonModal({ isOpen, onClose, initialProductIds = [], onAddToCart 
       <div className="modal-box" style={{ maxWidth: '850px' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>⚖️ Side-by-Side Product Comparison</h3>
-          <button className="btn-close-drawer" onClick={onClose}>✕</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div className="modal-body">

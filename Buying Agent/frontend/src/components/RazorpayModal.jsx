@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { verifyPayment, loadRazorpayScript } from '../api/agentApi';
 
 const testPaymentMethods = [
@@ -153,7 +154,11 @@ function RazorpayModal({ isOpen, onClose, paymentData, onPaymentSuccess }) {
               </p>
             </div>
           </div>
-          <button className="btn-close-drawer" onClick={onClose}>✕</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div className="modal-body" style={{ padding: '22px' }}>

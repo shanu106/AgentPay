@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchAuthorization, updateAuthorization, revokeAuthorization } from '../api/agentApi';
 
 const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpdated, isEmbedded = false }) => {
@@ -115,7 +116,11 @@ const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpd
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Status Pill */}
@@ -167,7 +172,7 @@ const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpd
 
         {/* Form Controls */}
         <form onSubmit={handleSave}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
+          <div className="auth-grid-2col" style={{ gap: '14px', marginBottom: '16px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '6px' }}>
                 Max Per-Transaction Limit (₹)
@@ -258,7 +263,7 @@ const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpd
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '16px' }}>
+          <div className="auth-action-row" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '16px' }}>
             <button
               type="button"
               onClick={handleRevoke}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { checkoutCart } from '../api/agentApi';
 
 function CheckoutModal({ isOpen, onClose, cart, onOrderSuccess }) {
@@ -39,7 +40,11 @@ function CheckoutModal({ isOpen, onClose, cart, onOrderSuccess }) {
       <div className="modal-box" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>💳 {confirmedOrder ? 'Order Confirmation' : 'Complete Your Purchase'}</h3>
-          <button className="btn-close-drawer" onClick={onClose}>✕</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div className="modal-body">

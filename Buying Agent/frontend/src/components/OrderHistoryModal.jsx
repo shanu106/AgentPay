@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchUserOrders } from '../api/agentApi';
 
 const OrderHistoryModal = ({ isOpen, onClose, userEmail, userName }) => {
@@ -62,7 +63,11 @@ const OrderHistoryModal = ({ isOpen, onClose, userEmail, userName }) => {
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Stats Bar */}

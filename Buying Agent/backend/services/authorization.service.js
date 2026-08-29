@@ -96,9 +96,7 @@ class AuthorizationService {
 
     // Category check if configured
     if (allowedCategories && allowedCategories.length > 0) {
-      const cat = (product.category || '').toLowerCase();
-      const subcat = (product.subcategory || '').toLowerCase();
-      const isAllowed = allowedCategories.some(c => cat.includes(c.toLowerCase()) || subcat.includes(c.toLowerCase()));
+      const isAllowed = PolicyEngine.isCategoryAllowed(allowedCategories, product.category, product.merchantId || product.merchant?.id);
       if (!isAllowed) {
         return {
           authorized: false,

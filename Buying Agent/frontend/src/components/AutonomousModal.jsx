@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { runAutonomousMission } from '../api/agentApi';
 
 const sampleGoals = [
@@ -64,7 +65,11 @@ function AutonomousModal({ isOpen, onClose, onCartUpdated, onOrderPlaced }) {
               </p>
             </div>
           </div>
-          <button className="btn-close-drawer" onClick={onClose}>✕</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         <div className="modal-body">

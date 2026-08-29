@@ -195,7 +195,9 @@ async function getPaymentMethods(email) {
     method: r.method,
     brand: r.brand,
     last4: r.last4,
-    cardNumber: r.card_number,
+    cardNumber: r.card_number || (r.last4 ? `•••• •••• •••• ${r.last4}` : null),
+    token_ref: r.token_ref,
+    tokenRef: r.token_ref,
     expiry: r.expiry,
     holder: r.holder,
     bank: r.bank,
@@ -224,16 +226,22 @@ async function addPaymentMethod(email, methodData) {
   const methodId = methodData.id || `pm_${Date.now()}`;
   const isDefault = Boolean(methodData.isDefault || false);
 
+  const cleanCardNum = methodData.cardNumber ? methodData.cardNumber.replace(/\s+/g, '') : (methodData.card_number ? methodData.card_number.replace(/\s+/g, '') : null);
+  const last4 = methodData.last4 || (cleanCardNum ? cleanCardNum.slice(-4) : null);
+  const tokenRef = methodData.token_ref || methodData.tokenRef || (last4 ? `rzp_test_${methodData.type || 'card'}_${last4}` : null);
+
   if (isDefault) {
     await query('UPDATE payment_methods SET is_default = FALSE WHERE user_id = $1', [user.id]);
   }
 
   await query(`
     INSERT INTO payment_methods (
-      id, user_id, type, method, brand, last4, card_number, expiry,
+      id, user_id, type, method, brand, last4, card_number, token_ref, expiry,
       holder, bank, bank_name, vpa, label, category, auto_debit_limit, is_default
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     ON CONFLICT (id) DO UPDATE SET
+      card_number = EXCLUDED.card_number,
+      token_ref = EXCLUDED.token_ref,
       auto_debit_limit = EXCLUDED.auto_debit_limit,
       is_default = EXCLUDED.is_default,
       label = EXCLUDED.label
@@ -243,8 +251,9 @@ async function addPaymentMethod(email, methodData) {
     methodData.type || 'card',
     methodData.method || 'card',
     methodData.brand || 'Saved Method',
-    methodData.last4 || null,
-    methodData.cardNumber || null,
+    last4,
+    cleanCardNum,
+    tokenRef,
     methodData.expiry || null,
     methodData.holder || user.name,
     methodData.bank || null,

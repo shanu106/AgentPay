@@ -2,6 +2,7 @@ const userStore = require('../services/userStore.service');
 const emailService = require('../services/email.service');
 const PolicyEngine = require('../services/policy/PolicyEngine');
 const SpendingLedger = require('../services/policy/SpendingLedger');
+const { query } = require('../db/index');
 
 let activeUserEmail = 'nawaz@gmail.com';
 
@@ -333,7 +334,7 @@ const revokeAuthorization = async (req, res) => {
  */
 const getMerchants = async (req, res) => {
   try {
-    const result = await userStore.query('SELECT * FROM merchants ORDER BY name ASC');
+    const result = await query('SELECT * FROM merchants ORDER BY name ASC');
     res.json({
       success: true,
       merchants: result.rows
@@ -353,7 +354,7 @@ const updateMerchantSettings = async (req, res) => {
       return res.status(400).json({ success: false, message: 'merchantId is required.' });
     }
 
-    const updateRes = await userStore.query(
+    const updateRes = await query(
       `UPDATE merchants SET 
         agent_commerce_enabled = COALESCE($1, agent_commerce_enabled),
         max_autonomous_order_amount = COALESCE($2, max_autonomous_order_amount),

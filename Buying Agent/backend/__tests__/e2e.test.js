@@ -9,11 +9,12 @@
 
 const assert = require('assert');
 const { processPurchaseRequest } = require('../services/buyerAgent');
-const { initDatabase } = require('../db/index');
+const { initDatabase, query } = require('../db/index');
 
 async function runE2ETests() {
   console.log('\n--- Running End-to-End Autonomous Purchase Tests ---');
   await initDatabase();
+  await query('UPDATE agent_authorizations SET max_transaction_amount = 5000.00, require_confirmation_above = 3000.00, daily_spending_limit = 10000.00, spent_today = 0 WHERE user_id = 1');
 
   // Test 1: Autonomous Auto-Paid Purchase (JS Course ₹499 < ₹3,000 auto-approval threshold)
   console.log('Testing Scenario 1: Autonomous 0-Click Auto-Paid (Amount < ₹3,000 confirmation threshold)...');

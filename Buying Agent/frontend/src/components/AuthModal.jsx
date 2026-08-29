@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { signupUser, loginUser } from '../api/agentApi';
 
 const AuthModal = ({ isOpen, onClose, currentUser, onAuthSuccess }) => {
@@ -68,7 +69,11 @@ const AuthModal = ({ isOpen, onClose, currentUser, onAuthSuccess }) => {
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* View Switcher Tabs */}
@@ -239,9 +244,58 @@ const AuthModal = ({ isOpen, onClose, currentUser, onAuthSuccess }) => {
           </button>
         </form>
 
+        {/* Quick Demo Logins */}
+        <div style={{ marginTop: '14px', padding: '10px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            ⚡ Quick Demo Accounts
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('shahnawaznilger@gmail.com');
+                setPassword('password123');
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                background: 'rgba(59, 130, 246, 0.1)',
+                color: 'var(--accent-blue)',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              👤 Shahnawaz (shahnawaznilger@...)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('nawaz@gmail.com');
+                setPassword('password123');
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                background: 'rgba(16, 185, 129, 0.1)',
+                color: '#34d399',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              👤 Nawaz Khan (nawaz@...)
+            </button>
+          </div>
+        </div>
+
         <div style={{
-          marginTop: '16px',
-          paddingTop: '12px',
+          marginTop: '14px',
+          paddingTop: '10px',
           borderTop: '1px solid rgba(255, 255, 255, 0.05)',
           display: 'flex',
           alignItems: 'center',
@@ -250,12 +304,15 @@ const AuthModal = ({ isOpen, onClose, currentUser, onAuthSuccess }) => {
           color: 'var(--text-secondary)'
         }}>
           <div>
-            Active: <strong style={{ color: '#93c5fd' }}>{currentUser?.email || 'nawaz@gmail.com'}</strong>
+            Active: <strong style={{ color: '#93c5fd' }}>{currentUser?.email || 'shahnawaznilger@gmail.com'}</strong>
           </div>
           <button
             type="button"
             onClick={() => {
               localStorage.removeItem('buying_agent_token');
+              localStorage.removeItem('agentpay_user');
+              localStorage.removeItem('agentpay_email');
+              document.cookie = "agentpay_email=; path=/; max-age=0";
               if (onAuthSuccess) onAuthSuccess(null, null);
               setSuccessMsg('Signed out of session.');
             }}

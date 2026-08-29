@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchPaymentMethods, addPaymentMethod, setDefaultPaymentMethod, deletePaymentMethod, updatePaymentMethod } from '../api/agentApi';
 
 const popularBanks = [
@@ -12,14 +13,15 @@ const popularBanks = [
   { code: 'CNRB', name: 'Canara Bank', label: 'Canara Bank NetBanking' }
 ];
 
-function SavedPaymentModal({ isOpen, onClose, userEmail = 'nawaz@gmail.com', savedPayment, onPaymentUpdated }) {
+function SavedPaymentModal({ isOpen, onClose, userEmail = 'shahnawaznilger@gmail.com', savedPayment, onPaymentUpdated }) {
+  const defaultHolder = userEmail.startsWith('shahnawaz') ? 'Shahnawaz Nilger' : 'Nawaz Khan';
   const [methods, setMethods] = useState([]);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'add_card' | 'add_nb' | 'add_upi'
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
   // New Card Form
-  const [cardHolder, setCardHolder] = useState('Nawaz Khan');
+  const [cardHolder, setCardHolder] = useState(defaultHolder);
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardBrand, setCardBrand] = useState('Visa Platinum Debit');
@@ -27,7 +29,7 @@ function SavedPaymentModal({ isOpen, onClose, userEmail = 'nawaz@gmail.com', sav
 
   // New NetBanking Form
   const [selectedBankCode, setSelectedBankCode] = useState('SBIN');
-  const [nbHolder, setNbHolder] = useState('Nawaz Khan');
+  const [nbHolder, setNbHolder] = useState(defaultHolder);
   const [nbLimit, setNbLimit] = useState(50000);
 
   // New UPI Form
@@ -218,7 +220,11 @@ function SavedPaymentModal({ isOpen, onClose, userEmail = 'nawaz@gmail.com', sav
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Tab Navigation */}

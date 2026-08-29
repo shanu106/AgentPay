@@ -23,7 +23,9 @@ import {
   ExternalLink,
   ChevronRight,
   SlidersHorizontal,
-  Wallet
+  Wallet,
+  Menu,
+  X
 } from 'lucide-react';
 import {
   submitPurchaseRequest,
@@ -63,20 +65,56 @@ const exampleQueriesHi = [
   { label: '🛡️ टेस्ट सिक्योरिटी: अधिक राशि (सीमा से अधिक)', query: '250000 रुपये का गेमिंग लैपटॉप खरीदो' }
 ];
 
+// Helper: Session Persistence via Cookies and LocalStorage
+const setSessionCookiesAndStorage = (userData) => {
+  if (!userData || !userData.email) return;
+  try {
+    localStorage.setItem('agentpay_user', JSON.stringify(userData));
+    localStorage.setItem('agentpay_email', userData.email);
+    if (userData.name) localStorage.setItem('agentpay_name', userData.name);
+    if (userData.token) {
+      localStorage.setItem('buying_agent_token', userData.token);
+      localStorage.setItem('agentpay_token', userData.token);
+    }
+    const maxAge = 365 * 24 * 60 * 60; // 1 year session retention
+    document.cookie = `agentpay_email=${encodeURIComponent(userData.email)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    if (userData.token) {
+      document.cookie = `agentpay_token=${encodeURIComponent(userData.token)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+    }
+  } catch (_) {}
+};
+
+const getStoredSession = () => {
+  try {
+    const raw = localStorage.getItem('agentpay_user');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.email) return parsed;
+    }
+  } catch (_) {}
+  const match = typeof document !== 'undefined' ? document.cookie.match(/(?:^|;\s*)agentpay_email=([^;]*)/) : null;
+  const cookieEmail = match ? decodeURIComponent(match[1]) : null;
+  const email = localStorage.getItem('agentpay_email') || cookieEmail || 'shahnawaznilger@gmail.com';
+  const name = localStorage.getItem('agentpay_name') || (email.startsWith('shahnawaz') ? 'Shahnawaz Nilger' : 'Nawaz Khan');
+  return { email, name };
+};
+
 function App() {
+  const initialSession = getStoredSession();
+
   // Theme state: Dark (default) or Light
   const [theme, setTheme] = useState(() => localStorage.getItem('agentpay_theme') || 'dark');
   const [activeNav, setActiveNav] = useState('payments'); // 'payments' | 'terminal' | 'policies' | 'transactions' | 'merchants' | 'cards' | 'audit'
 
   const [language, setLanguage] = useState('en');
   const [purchaseQuery, setPurchaseQuery] = useState('Buy 2 chicken biryani and pay using sbi netbanking');
-  const [customerName, setCustomerName] = useState('Nawaz Khan');
-  const [customerEmail, setCustomerEmail] = useState('nawaz@gmail.com');
+  const [customerName, setCustomerName] = useState(initialSession.name);
+  const [customerEmail, setCustomerEmail] = useState(initialSession.email);
   const [loading, setLoading] = useState(false);
 
   // Stats & Ledger state
   const [policyData, setPolicyData] = useState(null);
-  const [spendingStats, setSpendingStats] = useState({ spentToday: 499, dailyLimit: 10000, remaining: 9501 });
+  const [spendingStats, setSpendingStats] = useState({ spentToday: 0, dailyLimit: 50000, remaining: 50000 });
   const [recentOrders, setRecentOrders] = useState([]);
   const [merchantsList, setMerchantsList] = useState([]);
 
@@ -87,8 +125,8 @@ function App() {
     brand: 'Visa Debit',
     cardNumber: '4100 2800 0000 1007',
     last4: '1007',
-    expiry: '10/28',
-    holder: 'Nawaz Khan',
+    expiry: '12/28',
+    holder: initialSession.name,
     autoDebitLimit: 15000
   });
 
@@ -102,16 +140,25 @@ function App() {
 
   // Modals & User Auth
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [userProfile, setUserProfile] = useState(null);
+  const [userProfile, setUserProfile] = useState(initialSession.email ? initialSession : null);
   const [isRazorpayOpen, setIsRazorpayOpen] = useState(false);
   const [isApiKeyOpen, setIsApiKeyOpen] = useState(false);
   const [isSavedPaymentOpen, setIsSavedPaymentOpen] = useState(false);
   const [config, setConfig] = useState(null);
 
+  // Sidebar mobile drawer state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Voice AI State
   const [isListening, setIsListening] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const recognitionRef = useRef(null);
+
+  // Close sidebar when nav item clicked on mobile
+  const handleNavClick = (navKey) => {
+    setActiveNav(navKey);
+    setSidebarOpen(false);
+  };
 
   // Synchronize Theme Attribute
   useEffect(() => {
@@ -124,19 +171,22 @@ function App() {
   };
 
   useEffect(() => {
-    loadInitialData();
+    const session = getStoredSession();
+    setSessionCookiesAndStorage(session);
+    loadInitialData(session.email);
   }, []);
 
-  const loadInitialData = async () => {
+  const loadInitialData = async (emailToLoad) => {
+    const targetEmail = emailToLoad || customerEmail || 'shahnawaznilger@gmail.com';
     loadConfig();
-    loadUserProfile();
-    loadSavedPayment();
-    loadLedgerData();
+    loadUserProfile(targetEmail);
+    loadSavedPayment(targetEmail);
+    loadLedgerData(targetEmail);
   };
 
-  const loadLedgerData = async () => {
+  const loadLedgerData = async (emailParam) => {
     try {
-      const email = customerEmail || 'nawaz@gmail.com';
+      const email = emailParam || customerEmail || 'shahnawaznilger@gmail.com';
       const [authRes, ordersRes, merchRes] = await Promise.all([
         fetchAuthorization(email).catch(() => null),
         fetchUserOrders(email).catch(() => null),
@@ -156,13 +206,15 @@ function App() {
     } catch (_) {}
   };
 
-  const loadUserProfile = async () => {
+  const loadUserProfile = async (emailParam) => {
     try {
-      const res = await fetchUserProfile();
+      const targetEmail = emailParam || customerEmail || 'shahnawaznilger@gmail.com';
+      const res = await fetchUserProfile(targetEmail);
       if (res.success && res.user) {
         setUserProfile(res.user);
         if (res.user.email) setCustomerEmail(res.user.email);
         if (res.user.name) setCustomerName(res.user.name);
+        setSessionCookiesAndStorage(res.user);
       }
     } catch (_) {}
   };
@@ -174,10 +226,15 @@ function App() {
     } catch (_) {}
   };
 
-  const loadSavedPayment = async () => {
+  const loadSavedPayment = async (emailParam) => {
     try {
-      const payment = await fetchSavedPaymentMethod();
-      if (payment) setSavedPayment(payment);
+      const targetEmail = emailParam || customerEmail || 'shahnawaznilger@gmail.com';
+      const payment = await fetchSavedPaymentMethod(targetEmail);
+      if (payment?.paymentMethod) {
+        setSavedPayment(payment.paymentMethod);
+      } else if (payment) {
+        setSavedPayment(payment);
+      }
     } catch (_) {}
   };
 
@@ -186,8 +243,22 @@ function App() {
       setUserProfile(userData);
       setCustomerEmail(userData.email);
       setCustomerName(userData.name);
-      loadSavedPayment();
-      loadLedgerData();
+      setSessionCookiesAndStorage(userData);
+      loadSavedPayment(userData.email);
+      loadLedgerData(userData.email);
+    } else {
+      // Sign out
+      localStorage.removeItem('agentpay_user');
+      localStorage.removeItem('agentpay_token');
+      localStorage.removeItem('agentpay_email');
+      localStorage.removeItem('agentpay_name');
+      localStorage.removeItem('buying_agent_token');
+      document.cookie = "agentpay_email=; path=/; max-age=0";
+      document.cookie = "agentpay_token=; path=/; max-age=0";
+      setUserProfile(null);
+      setCustomerEmail('shahnawaznilger@gmail.com');
+      setCustomerName('Shahnawaz Nilger');
+      loadInitialData('shahnawaznilger@gmail.com');
     }
   };
 
@@ -293,7 +364,18 @@ function App() {
       if (result.paymentData) setPaymentData(result.paymentData);
       if (result.autoPaid && result.order) setConfirmedOrder(result.order);
 
-      const voiceText = result.spokenFeedback || result.reply || (result.success ? 'Order completed successfully.' : 'Order blocked by policy.');
+      let voiceText = result.spokenFeedback;
+      if (!voiceText) {
+        if (result.autoPaid) {
+          voiceText = 'Order completed and paid successfully.';
+        } else if (result.requiresConfirmation || result.requiresCheckout) {
+          voiceText = 'Order exceeds auto-approval limit. User confirmation is required to proceed with payment.';
+        } else if (result.reply) {
+          voiceText = result.reply;
+        } else {
+          voiceText = result.success ? 'Your request has been processed.' : 'Order blocked by policy.';
+        }
+      }
       playVoiceFeedback(voiceText, result.audioUrl, language);
       await loadLedgerData();
     } catch (err) {
@@ -307,17 +389,34 @@ function App() {
 
   const handlePaymentSuccess = (paymentResult) => {
     setIsRazorpayOpen(false);
-    setConfirmedOrder({
+    const updatedOrder = {
       ...activeOrder,
       razorpayPaymentId: paymentResult.razorpay_payment_id,
       status: 'confirmed',
       paymentStatus: 'paid'
-    });
+    };
+    setConfirmedOrder(updatedOrder);
     setSteps(prev => [
       ...prev,
       { text: `Payment captured via Razorpay (ID: ${paymentResult.razorpay_payment_id})`, status: 'completed' },
       { text: `Autonomous Order Complete!`, status: 'completed' }
     ]);
+
+    const orderItems = updatedOrder?.items || [];
+    let itemsSpoken = '';
+    if (orderItems.length > 1) {
+      itemsSpoken = orderItems.map(i => `${i.quantity} ${i.title}`).join(', ');
+    } else if (orderItems.length === 1) {
+      itemsSpoken = `${orderItems[0].quantity > 1 ? orderItems[0].quantity + ' ' : ''}${orderItems[0].title}`;
+    } else {
+      itemsSpoken = updatedOrder?.productTitle || 'your items';
+    }
+
+    const successVoiceText = language === 'hi'
+      ? `आपका ${itemsSpoken} का भुगतान सफलतापूर्वक पूरा हो गया है और ऑर्डर कन्फर्म हो गया है!`
+      : `Payment captured successfully! Your order for ${itemsSpoken} is confirmed and complete.`;
+
+    playVoiceFeedback(successVoiceText, null, language);
     loadLedgerData();
   };
 
@@ -325,8 +424,14 @@ function App() {
 
   return (
     <div className="app-layout">
+      {/* Mobile sidebar overlay backdrop */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
       {/* ================= LEFT SIDEBAR ================= */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-brand">
           <div className="brand-icon-box">
             <Zap size={18} fill="#fff" />
@@ -341,7 +446,7 @@ function App() {
             <button
               type="button"
               className={`nav-item ${activeNav === 'payments' ? 'active' : ''}`}
-              onClick={() => setActiveNav('payments')}
+              onClick={() => handleNavClick('payments')}
             >
               <LayoutDashboard className="nav-icon" />
               <span>Payments</span>
@@ -350,7 +455,7 @@ function App() {
             <button
               type="button"
               className={`nav-item ${activeNav === 'terminal' ? 'active' : ''}`}
-              onClick={() => setActiveNav('terminal')}
+              onClick={() => handleNavClick('terminal')}
             >
               <Zap className="nav-icon" />
               <span>AI Terminal</span>
@@ -359,16 +464,16 @@ function App() {
             <button
               type="button"
               className={`nav-item ${activeNav === 'policies' ? 'active' : ''}`}
-              onClick={() => setActiveNav('policies')}
+              onClick={() => handleNavClick('policies')}
             >
               <ShieldCheck className="nav-icon" />
-              <span>Budget & Policies</span>
+              <span>Budget &amp; Policies</span>
             </button>
 
             <button
               type="button"
               className={`nav-item ${activeNav === 'transactions' ? 'active' : ''}`}
-              onClick={() => setActiveNav('transactions')}
+              onClick={() => handleNavClick('transactions')}
             >
               <Receipt className="nav-icon" />
               <span>Transactions</span>
@@ -377,16 +482,16 @@ function App() {
             <button
               type="button"
               className={`nav-item ${activeNav === 'cards' ? 'active' : ''}`}
-              onClick={() => setIsSavedPaymentOpen(true)}
+              onClick={() => { setSidebarOpen(false); setIsSavedPaymentOpen(true); }}
             >
               <CreditCard className="nav-icon" />
-              <span>Cards & Auto-Pay</span>
+              <span>Cards &amp; Auto-Pay</span>
             </button>
 
             <button
               type="button"
               className={`nav-item ${activeNav === 'merchants' ? 'active' : ''}`}
-              onClick={() => setActiveNav('merchants')}
+              onClick={() => handleNavClick('merchants')}
             >
               <Store className="nav-icon" />
               <span>Merchant Stores</span>
@@ -399,7 +504,7 @@ function App() {
             <button
               type="button"
               className={`nav-item ${activeNav === 'audit' ? 'active' : ''}`}
-              onClick={() => setActiveNav('audit')}
+              onClick={() => handleNavClick('audit')}
             >
               <FileText className="nav-icon" />
               <span>Audit Trail</span>
@@ -454,6 +559,16 @@ function App() {
       <div className="main-wrapper">
         {/* Top Header Bar */}
         <header className="top-bar">
+          {/* Hamburger (visible on mobile only) */}
+          <button
+            type="button"
+            className="sidebar-hamburger"
+            onClick={() => setSidebarOpen(prev => !prev)}
+            aria-label="Toggle navigation menu"
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+
           {/* Global Search Bar */}
           <div className="top-search-wrap">
             <Search size={16} className="search-icon-pos" />
@@ -952,6 +1067,7 @@ function App() {
             <AuthorizationDashboard
               isEmbedded={true}
               userEmail={customerEmail}
+              onClose={() => setActiveNav('payments')}
               onPolicyUpdated={() => loadLedgerData()}
             />
           )}
@@ -961,6 +1077,7 @@ function App() {
             <TransactionDashboard
               isEmbedded={true}
               userEmail={customerEmail}
+              onClose={() => setActiveNav('payments')}
             />
           )}
 
@@ -968,6 +1085,7 @@ function App() {
           {activeNav === 'merchants' && (
             <MerchantDashboard
               isEmbedded={true}
+              onClose={() => setActiveNav('payments')}
             />
           )}
 

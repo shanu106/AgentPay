@@ -38,8 +38,9 @@ export const paymentService = {
     return handleResponse(res);
   },
 
-  async fetchSavedPaymentMethod() {
-    const res = await fetch(`${API_BASE}/agent/saved-payment-method`);
+  async fetchSavedPaymentMethod(email) {
+    const url = email ? `${API_BASE}/agent/saved-payment-method?email=${encodeURIComponent(email)}` : `${API_BASE}/agent/saved-payment-method`;
+    const res = await fetch(url);
     return handleResponse(res);
   },
 

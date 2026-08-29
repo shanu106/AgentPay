@@ -841,3 +841,404 @@
   overflow-y: auto;
   box-shadow: var(--shadow-modal);
 }
+
+/* Unified Modal & Tab Close Button */
+.modal-close-btn, .tab-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+[data-theme='light'] .modal-close-btn, [data-theme='light'] .tab-close-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #64748b;
+}
+
+.modal-close-btn:hover, .tab-close-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  transform: scale(1.06);
+}
+
+.modal-close-btn:active, .tab-close-btn:active {
+  transform: scale(0.94);
+}
+
+/* Secondary Close button in modal footers */
+.modal-btn-secondary {
+  padding: 8px 18px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary, #cbd5e1);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+[data-theme='light'] .modal-btn-secondary {
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #475569;
+}
+
+.modal-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary, #ffffff);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+[data-theme='light'] .modal-btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* ================================================================
+   RESPONSIVE BREAKPOINTS — Full Mobile / Tablet Support
+   ================================================================ */
+
+/* ── Hamburger toggle button (only shown ≤768px) ── */
+.sidebar-hamburger {
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.sidebar-hamburger:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+/* ── Sidebar mobile overlay backdrop ── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 49;
+  backdrop-filter: blur(3px);
+}
+.sidebar-overlay.active {
+  display: block;
+}
+
+/* ─────────────────────────────────────────────────
+   TABLET  ≤ 1024px
+───────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sidebar { width: 200px; }
+  .top-bar { padding: 0 20px; }
+  .top-search-wrap { width: 240px; }
+  .dashboard-content { padding: 20px; }
+  .metric-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .main-workspace-grid { grid-template-columns: 1fr; }
+  .header-action-group { flex-wrap: wrap; }
+  .btn-ghost-flat span { display: none; }
+}
+
+/* ─────────────────────────────────────────────────
+   MOBILE  ≤ 768px  —  Sidebar becomes slide-in drawer
+───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show hamburger */
+  .sidebar-hamburger { display: flex; }
+
+  /* Sidebar off-screen by default */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 260px;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+  .sidebar.sidebar-open { transform: translateX(0); }
+
+  /* Main area fills full width */
+  .main-wrapper { width: 100%; }
+
+  /* Top bar */
+  .top-bar {
+    padding: 0 12px;
+    height: 56px;
+    gap: 8px;
+  }
+
+  /* Collapse search to icon placeholder */
+  .top-search-wrap {
+    width: 36px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .top-search-input {
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    padding: 0;
+  }
+  .search-icon-pos { left: 8px; }
+  .search-shortcut-badge { display: none; }
+
+  /* Hide non-critical top-bar items */
+  .test-mode-pill { display: none; }
+  .user-name-text { display: none; }
+  .top-actions { gap: 6px; }
+  .icon-btn { width: 32px; height: 32px; }
+
+  /* Dashboard */
+  .dashboard-content {
+    padding: 14px 12px;
+    gap: 16px;
+  }
+
+  /* Page header stacks vertically */
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .page-title-area h2 { font-size: 1.25rem; }
+
+  /* Action buttons */
+  .header-action-group {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-action-group .btn-secondary-flat span,
+  .header-action-group .btn-ghost-flat { display: none; }
+  .header-action-group .btn-primary-blue {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* Cards */
+  .metric-grid-4 { grid-template-columns: 1fr; }
+  .debit-card-realistic { min-height: 130px; }
+  .card-number-masked { font-size: 0.9rem; letter-spacing: 0.07em; }
+
+  /* Terminal panel */
+  .ai-terminal-panel { padding: 14px; }
+  .terminal-header { flex-wrap: wrap; gap: 8px; }
+
+  /* Prompt bar */
+  .prompt-bar-wrap {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .prompt-bar-input {
+    width: 100%;
+    min-width: 0;
+    font-size: 0.85rem;
+    order: 2;
+  }
+  .btn-mic-icon { order: 1; }
+  .btn-primary-blue.execute-btn { order: 3; width: 100%; justify-content: center; }
+
+  /* Scenario pills — horizontal scroll */
+  .quick-scenarios-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .quick-scenarios-row::-webkit-scrollbar { display: none; }
+  .scenario-pill {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Transactions table — horizontal scroll */
+  .transactions-panel { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .fintech-table { min-width: 560px; }
+
+  /* Merchant widget */
+  .merchants-widget-card { padding: 14px; }
+
+  /* Modal → bottom-sheet on mobile */
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal-content {
+    max-width: 100%;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+
+  /* Activity panel */
+  .activity-panel { min-height: 320px; }
+  .activity-steps-feed { max-height: 260px; }
+}
+
+/* Component responsive utility classes */
+.auth-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.auth-action-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.merchant-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.tx-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.tx-filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirmation-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.order-confirmation-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.confirmation-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.confirmation-item {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirmation-item .label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.confirmation-item .value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirmation-item .value.mono {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: #93c5fd;
+}
+
+/* ─────────────────────────────────────────────────
+   MOBILE COMPONENT ADJUSTMENTS (≤ 768px)
+───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .auth-grid-2col {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auth-action-row button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .merchant-card-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .merchant-card-row > div:last-child {
+    width: 100%;
+  }
+
+  .merchant-card-row button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .tx-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tx-item-header > div:last-child {
+    text-align: left;
+    margin-top: 6px;
+  }
+
+  .confirmation-details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─────────────────────────────────────────────────
+   SMALL MOBILE  ≤ 420px
+───────────────────────────────────────────────── */
+@media (max-width: 420px) {
+  .stat-card { min-height: 120px; padding: 14px; }
+  .stat-card-value { font-size: 1.2rem; }
+  .dashboard-content { padding: 10px; }
+  .top-bar { padding: 0 10px; }
+  .page-title-area h2 { font-size: 1.05rem; }
+  .ai-terminal-panel { padding: 12px; }
+  .fintech-table th, .fintech-table td { padding: 10px 12px; }
+}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { fetchMerchants, updateMerchantSettings } from '../api/agentApi';
 
 const MerchantDashboard = ({ isOpen = true, onClose, isEmbedded = false }) => {
@@ -82,7 +83,11 @@ const MerchantDashboard = ({ isOpen = true, onClose, isEmbedded = false }) => {
               </p>
             </div>
           </div>
-          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          {onClose && (
+            <button className="modal-close-btn" onClick={onClose} aria-label="Close" title="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {statusMsg && (
@@ -104,14 +109,12 @@ const MerchantDashboard = ({ isOpen = true, onClose, isEmbedded = false }) => {
             return (
               <div
                 key={m.id}
+                className="merchant-card-row"
                 style={{
                   background: 'rgba(0, 0, 0, 0.25)',
                   border: `1px solid ${isEnabled ? 'rgba(99, 102, 241, 0.25)' : 'rgba(239, 68, 68, 0.25)'}`,
                   borderRadius: '10px',
-                  padding: '16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+                  padding: '16px'
                 }}
               >
                 <div>
