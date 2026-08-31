@@ -234,6 +234,21 @@ const generateTTS = async (req, res) => {
   }
 };
 
+const getMerchantScores = async (req, res) => {
+  try {
+    const merchantService = require('../services/merchant.service');
+    const scores = await merchantService.getMerchantScores();
+    res.json({
+      success: true,
+      count: scores.length,
+      merchants: scores
+    });
+  } catch (err) {
+    console.error('Merchant Scores Error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to evaluate merchant scores' });
+  }
+};
+
 const getHealth = (req, res) => {
   res.json({
     status: 'ok',
@@ -254,6 +269,8 @@ module.exports = {
   getConfig,
   updateConfigKey,
   generateTTS,
+  getMerchantScores,
   getHealth
 };
+
 

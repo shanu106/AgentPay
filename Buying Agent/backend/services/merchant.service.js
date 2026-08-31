@@ -219,11 +219,39 @@ const verifyMerchantPayment = async ({ razorpay_order_id, razorpay_payment_id, r
   return data;
 };
 
+const MerchantTrustEngine = require('./merchant/MerchantTrustEngine');
+
+/**
+ * Get AI Sellability & Trust Scores for all registered merchants
+ */
+const getMerchantScores = async () => {
+  const merchants = await getActiveMerchants();
+  const results = [];
+
+  for (const m of merchants) {
+    let products = [];
+    try {
+      const res = await fetch(`${m.apiBase}/products`);
+      if (res.ok) {
+        const data = await res.json();
+        products = data.products || [];
+      }
+    } catch (_) {}
+
+    const scoreData = MerchantTrustEngine.evaluateMerchant(m, products);
+    results.push(scoreData);
+  }
+
+  return results;
+};
+
 module.exports = {
   searchMerchantProducts,
   getMerchantProduct,
   checkMerchantAvailability,
   createMerchantOrder,
   verifyMerchantPayment,
+  getMerchantScores,
   productMerchantMap
 };
+

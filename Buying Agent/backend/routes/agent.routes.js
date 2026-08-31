@@ -18,9 +18,11 @@ router.post('/verify-checkout', agentController.verifyCheckout);
 router.post('/tts', agentController.generateTTS);
 router.post('/voice/speak', agentController.generateTTS);
 
-// Placed Orders & Audit Logs
+// Placed Orders, Audit Logs & Merchant Trust Scores
 router.get('/orders', agentController.listOrders);
 router.get('/orders/:id', agentController.getOrderById);
 router.get('/audit-logs', agentController.getAuditLogs);
+router.get('/merchants/scores', agentController.getMerchantScores);
 
 module.exports = router;
+

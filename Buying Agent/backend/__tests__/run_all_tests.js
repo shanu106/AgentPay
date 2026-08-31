@@ -3,6 +3,12 @@
  */
 
 const { runPolicyTests } = require('./policy.test');
+const { runSpendingLimitTests } = require('./spending_limits.test');
+const { runKillSwitchTests } = require('./kill_switch.test');
+const { runMerchantTrustTests } = require('./merchant_risk_score.test');
+const { runOrderStateMachineTests } = require('./order_state_machine.test');
+const { runAuditExplainabilityTests } = require('./audit_explainability.test');
+const { runSecurityInjectionTests } = require('./security_injection.test');
 const { runRaceConditionTests } = require('./race_condition.test');
 const { runPaymentTests } = require('./payment.test');
 const { runIdempotencyTests } = require('./idempotency.test');
@@ -18,12 +24,19 @@ async function runAll() {
   let failed = 0;
 
   const suites = [
-    { name: 'Policy Engine Unit Tests', fn: runPolicyTests },
-    { name: 'Race Condition & Spending Ledger Safety', fn: runRaceConditionTests },
-    { name: 'Razorpay Provider & Signature Tests', fn: runPaymentTests },
-    { name: 'Idempotency & Replay Protection Tests', fn: runIdempotencyTests },
-    { name: 'End-to-End Autonomous Purchasing Tests', fn: runE2ETests }
+    { name: '1. Policy Engine Unit Tests', fn: runPolicyTests },
+    { name: '2. Spending Limit & Boundary Tests', fn: runSpendingLimitTests },
+    { name: '3. Kill Switch & Authorization Revocation', fn: runKillSwitchTests },
+    { name: '4. Merchant Trust & AI Sellability Scoring', fn: runMerchantTrustTests },
+    { name: '5. Order State Machine & Lifecycle Transitions', fn: runOrderStateMachineTests },
+    { name: '6. Audit Trail, Redaction & Email Receipts', fn: runAuditExplainabilityTests },
+    { name: '7. Security & Prompt Injection Defense', fn: runSecurityInjectionTests },
+    { name: '8. Race Condition & Spending Ledger Safety', fn: runRaceConditionTests },
+    { name: '9. Razorpay Provider & Signature Verification', fn: runPaymentTests },
+    { name: '10. Idempotency & Replay Protection Tests', fn: runIdempotencyTests },
+    { name: '11. End-to-End Autonomous Purchasing Tests', fn: runE2ETests }
   ];
+
 
   for (const suite of suites) {
     try {
@@ -44,7 +57,7 @@ async function runAll() {
   if (failed > 0) {
     process.exit(1);
   } else {
-    console.log('✨ All 5 test suites passed successfully!\n');
+    console.log(`✨ All ${suites.length} test suites passed successfully!\n`);
     process.exit(0);
   }
 }

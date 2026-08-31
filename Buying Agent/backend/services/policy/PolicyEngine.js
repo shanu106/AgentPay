@@ -31,6 +31,31 @@ class PolicyEngine {
     const reasonCodes = [];
     let requiresConfirmation = false;
 
+    // 0. Strict amount & currency validation (Phase 4, Phase 19)
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return {
+        decision: 'DENY',
+        reasonCodes: ['INVALID_AMOUNT'],
+        authorization: null,
+        requiresConfirmation: false,
+        details: { amount, message: 'Transaction amount must be a positive number greater than zero.' }
+      };
+    }
+
+    const normalizedCurrency = (currency || 'INR').toString().toUpperCase().trim();
+    if (normalizedCurrency !== 'INR') {
+      return {
+        decision: 'DENY',
+        reasonCodes: ['UNSUPPORTED_CURRENCY'],
+        authorization: null,
+        requiresConfirmation: false,
+        details: { currency, supported: 'INR' }
+      };
+    }
+
+    const parsedAmount = Math.round(numAmount * 100) / 100;
+
     // 1. Fetch user's active authorization
     let auth = request.authorization;
     if (!auth) {
