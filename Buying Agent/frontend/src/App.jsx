@@ -281,6 +281,15 @@ function App() {
     const cleanText = text.replace(/[*_`#]/g, '').trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = currentLang === 'hi' ? 'hi-IN' : 'en-US';
+    
+    // Pick the most natural sounding voice available in the browser
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const preferred = voices.find(v => 
+        (currentLang === 'hi' ? (v.lang.includes('hi') || v.lang.includes('IN')) : (v.lang.includes('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Siri'))))
+      );
+      if (preferred) utterance.voice = preferred;
+    }
     window.speechSynthesis.speak(utterance);
   };
 

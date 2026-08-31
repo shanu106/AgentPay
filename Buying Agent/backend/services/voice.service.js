@@ -8,8 +8,8 @@ const SUPPORTED_LANGUAGES = {
   HI: 'hi'
 };
 
-const DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // Rachel / Multilingual
-const DEFAULT_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
+const DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL'; // Sarah / High-quality Multilingual v2
+const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
 
 /**
  * Helper to build natural item list for speech (e.g. "2 Chicken Biryani, 1 Python Course, and 1 Keyboard")
@@ -130,8 +130,9 @@ function createSpokenFeedback(result = {}, language = 'en') {
  */
 async function generateSpeech({ text, language = 'en', voiceId, modelId, apiKey } = {}) {
   const effectiveApiKey = (apiKey || process.env.ELEVENLABS_API_KEY || '').trim();
-  const effectiveVoiceId = voiceId || DEFAULT_VOICE_ID;
-  const effectiveModelId = modelId || DEFAULT_MODEL_ID;
+  const configuredVoice = (process.env.ELEVENLABS_VOICE_ID || '').trim();
+  const effectiveVoiceId = (voiceId || configuredVoice || DEFAULT_VOICE_ID).trim();
+  const effectiveModelId = (modelId || process.env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL_ID).trim();
 
   if (!text || text.trim() === '') {
     return { success: false, message: 'No text provided for speech generation.' };
@@ -154,9 +155,9 @@ async function generateSpeech({ text, language = 'en', voiceId, modelId, apiKey 
     };
   }
 
-  try {
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${effectiveVoiceId}`;
-    const response = await fetch(url, {
+  const callElevenLabs = async (targetVoiceId) => {
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`;
+    return await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -172,6 +173,16 @@ async function generateSpeech({ text, language = 'en', voiceId, modelId, apiKey 
         }
       })
     });
+  };
+
+  try {
+    let response = await callElevenLabs(effectiveVoiceId);
+
+    // If custom voice fails with 402 (library voice on free tier) or 404, retry with DEFAULT_VOICE_ID
+    if (!response.ok && (response.status === 402 || response.status === 404) && effectiveVoiceId !== DEFAULT_VOICE_ID) {
+      console.warn(`[ElevenLabs TTS] Voice ${effectiveVoiceId} returned ${response.status} (likely Free plan library voice limit). Retrying with standard multilingual voice ${DEFAULT_VOICE_ID}...`);
+      response = await callElevenLabs(DEFAULT_VOICE_ID);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
