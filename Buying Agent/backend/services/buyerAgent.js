@@ -5,6 +5,7 @@ const PolicyEngine = require('./policy/PolicyEngine');
 const SpendingLedger = require('./policy/SpendingLedger');
 const userStore = require('./userStore.service');
 const emailService = require('./email.service');
+const AuditService = require('./order/AuditService');
 
 const SYSTEM_PROMPT = `You are the autonomous AI Shopping Agent built for Razorpay Agentic Commerce.
 Your objective is to help the user find, evaluate, authorize, purchase, and pay for products from the merchant store with ZERO human intervention whenever pre-authorized limits permit.`;
@@ -321,10 +322,11 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     };
   }
 
-  // Preserve compound product titles containing 'and' or '&' so they don't get split into multiple items
+  // Preserve compound product titles containing 'and', 'for', '&', etc. so they don't get split into multiple items
   let sanitized = cleaned
     .replace(/\b(ai|artificial\s+intelligence)\s+(and|&)\s+(machine\s+learning|ml)\b/gi, 'ai_and_machine_learning')
     .replace(/\b(machine\s+learning|ml)\s+(and|&)\s+(ai|artificial\s+intelligence)\b/gi, 'machine_learning_and_ai')
+    .replace(/\b(python)\s+(for)\s+(data\s+science)\b/gi, 'python_for_data_science')
     .replace(/\b(data\s+science)\s+(and|&)\s+(ai|machine\s+learning|python)\b/gi, 'data_science_and_$3')
     .replace(/\b(full\s+stack)\s+(and|&)\s+(web\s+dev|development)\b/gi, 'full_stack_and_web_dev')
     .replace(/\b(react)\s+(and|&)\s+(next\.?js|modern\s+web)\b/gi, 'react_and_modern_web')
@@ -338,19 +340,26 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   const wordQtyMap = { 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10, 'double': 2, 'pair': 2, 'triple': 3 };
   const qtyWords = Object.keys(wordQtyMap).join('|');
 
+  // Insert standard delimiter before conjunctions, determiners ('a'/'an' not at the start), and quantity counts
+  let delimited = sanitized
+    .replace(/(?:\s+and\s+|\s*&\s*|\s*\+\s*|\s+along\s+with\s+|\s+as\s+well\s+as\s+|\s+also\s+|\s+plus\s+)/gi, ' , ')
+    .replace(/(?<=[a-z0-9_])\s+(?:a|an)\s+(?=[a-z0-9_])/gi, ' , ')
+    .replace(/(?<=[a-z0-9_])\s+(?=(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:x|pcs|pieces|plates|units)?\s+[a-z0-9_])/gi, ' , ');
+
   const parseSegment = (seg) => {
     let s = seg.trim()
       .replace(/^and\s+/i, '')
-      .replace(/,\s*$/i, '')
-      .replace(/^(?:buy|bue|by|bay|order|purchase|get|want|find|give|pls|please|plz|me)\s+/gi, '')
+      .replace(/^,\s*|\s*,\s*$/g, '')
+      .replace(/^(?:buy|bue|by|bay|order|purchase|get|want|find|give|pls|please|plz|me|a|an|the)\s+/gi, '')
       .replace(/_and_/g, ' & ')
+      .replace(/_for_/g, ' for ')
       .replace(/_/g, ' ')
       .trim();
 
     if (!s) return [];
 
     // Discard any segment that is actually a payment instruction or delivery destination
-    if (/^(using|pay|paying|payment|and|with|via|through|from|for|on)$/i.test(s) ||
+    if (/^(using|pay|paying|payment|and|with|via|through|from|for|on|a|an|the)$/i.test(s) ||
         /\b(make\s+payment|payment|netbanking|net\s+banking|bank\s+of\s+baroda|baroda|sbi|hdfc|icici|canara|axis|upi|gpay|google\s+pay|phonepe|paytm|credit\s+card|debit\s+card|visa|mastercard|deliver|delivery|address|home|office|koramangala|residency)\b/i.test(s)) {
       return [];
     }
@@ -360,7 +369,7 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
       for (const m of matches) {
         const rawQty = m[1].toLowerCase();
         const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-        const name = m[2].trim().replace(/^and\s+/i, '');
+        const name = m[2].trim().replace(/^and\s+/i, '').replace(/^(?:a|an|the)\s+/i, '');
         if (name.length > 0) results.push({ query: name, quantity: q });
       }
       if (results.length > 0) return results;
@@ -371,7 +380,8 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     if (prefixMatch && prefixMatch[2].trim().length > 0) {
       const rawQty = prefixMatch[1].toLowerCase();
       const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-      return [{ query: prefixMatch[2].trim(), quantity: q }];
+      const cleanName = prefixMatch[2].trim().replace(/^(?:a|an|the)\s+/i, '');
+      return [{ query: cleanName, quantity: q }];
     }
 
     // Check Suffix Quantity: e.g. "burn to hell pizza 2 pcs"
@@ -379,14 +389,16 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
     if (suffixMatch && suffixMatch[1].trim().length > 0) {
       const rawQty = suffixMatch[2].toLowerCase();
       const q = parseInt(rawQty, 10) || wordQtyMap[rawQty] || 1;
-      return [{ query: suffixMatch[1].trim(), quantity: q }];
+      const cleanName = suffixMatch[1].trim().replace(/^(?:a|an|the)\s+/i, '');
+      return [{ query: cleanName, quantity: q }];
     }
 
-    return [{ query: s, quantity: 1 }];
+    const cleanDirect = s.replace(/^(?:a|an|the)\s+/i, '').trim();
+    return [{ query: cleanDirect || s, quantity: 1 }];
   };
 
-  // Split on "and", comma, plus, ampersand
-  const segments = sanitized.split(/(?:\s+and\s+|\s*&\s*|\s*,\s*|\s*\+\s*)/i);
+  // Split on comma delimiters
+  const segments = delimited.split(/\s*,\s*/i);
   const items = [];
   for (const seg of segments) {
     const parsed = parseSegment(seg);
@@ -394,14 +406,14 @@ const extractPurchaseIntent = (message, defaultLimit = 15000) => {
   }
 
   if (items.length === 0 && cleaned.length > 0) {
-    items.push({ query: cleaned.replace(/_and_/g, ' & ').replace(/_/g, ' '), quantity: 1 });
+    items.push({ query: cleaned.replace(/_and_/g, ' & ').replace(/_for_/g, ' for ').replace(/_/g, ' '), quantity: 1 });
   }
 
   const querySummary = items.map(i => `${i.quantity > 1 ? i.quantity + 'x ' : ''}${i.query}`).join(', ');
 
   return {
     items,
-    query: querySummary || 'biryani',
+    query: querySummary || 'item',
     quantity: items.reduce((acc, i) => acc + i.quantity, 0),
     maxPrice,
     hasExplicitBudget,
@@ -495,13 +507,7 @@ const processPurchaseRequest = async ({
   if (isGeminiAvailable) {
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // Try gemini-3.6-flash first, fallback to available model
-      let geminiModel;
-      try {
-        geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-      } catch {
-        geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      }
+      const modelCandidates = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
       const geminiPrompt = `You are a Shopping Assistant AI. Your job is to understand the user's purchase request and extract structured intent.
 
@@ -512,7 +518,8 @@ CRITICAL RULES:
      - "दो चिकन बिरयानी" → items: [{ query: "chicken biryani", quantity: 2 }]
      - "एक वायरलेस माउस" → items: [{ query: "wireless mouse", quantity: 1 }]
      - "पनीर बटर मसाला और 2 नान" → items: [{ query: "paneer butter masala", quantity: 1 }, { query: "naan", quantity: 2 }]
-   - If the user prompt is in **English**, extract ONLY the actual product names without conversational filler words.
+   - If the user prompt is in **English**, extract ALL product names individually (even if separated by 'a', 'an', commas, or 'and'):
+     - "buy me a mechanical keyboard a python for data science course and a chicken biryani" → items: [{ query: "mechanical keyboard", quantity: 1 }, { query: "python for data science", quantity: 1 }, { query: "chicken biryani", quantity: 1 }]
      - "buy a mouse fast from axis bank netbanking" → product is "mouse", NOT "mouse fast"
      - "buy me chicken biryani and pay using bob netbanking" → product is "chicken biryani"
      - "order 2 paneer butter masala asap" → product is "paneer butter masala", quantity is 2
@@ -541,9 +548,19 @@ User Message: "${effectiveMessage.replace(/"/g, '\\"')}"
 
 Respond ONLY with valid JSON inside a markdown codeblock.`;
 
-      const geminiRes = await geminiModel.generateContent(geminiPrompt);
-      const textOutput = geminiRes.response.text();
-      const jsonMatch = textOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, textOutput];
+      let textOutput = null;
+      for (const mName of modelCandidates) {
+        try {
+          const geminiModel = genAI.getGenerativeModel({ model: mName });
+          const geminiRes = await geminiModel.generateContent(geminiPrompt);
+          textOutput = geminiRes?.response?.text();
+          if (textOutput) break;
+        } catch (mErr) {
+          console.warn(`[Gemini ${mName} fallback]:`, mErr.message);
+        }
+      }
+
+      const jsonMatch = textOutput ? (textOutput.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, textOutput]) : null;
 
       if (jsonMatch && jsonMatch[1]) {
         const parsed = JSON.parse(jsonMatch[1].trim());
@@ -606,6 +623,22 @@ Respond ONLY with valid JSON inside a markdown codeblock.`;
     intent.maxPrice = effectiveMaxLimit;
     intent.cardLimit = cardLimit;
   }
+
+  // Record Intent Extraction Audit Trail
+  await AuditService.log('INTENT_EXTRACTED', {
+    userEmail: targetEmail,
+    userId: user.id,
+    agentSessionId: `session_${Date.now().toString(36)}`,
+    details: {
+      prompt: effectiveMessage,
+      extractedQuery: intent.query,
+      items: intent.items,
+      totalQuantity: intent.quantity,
+      geminiUsed,
+      budget: intent.maxPrice,
+      paymentMethod: paymentMethod?.label || paymentMethod?.brand || 'Default'
+    }
+  });
 
   const idempotencyKey = `idem_${user.id}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -1076,10 +1109,38 @@ const runSimulatedBuyerAgent = async ({
           text: `📧 Confirmation email sent to ${sessionContext.customerEmail}`,
           status: 'completed'
         });
+
+        await AuditService.log('EMAIL_RECEIPT_DISPATCHED', {
+          userEmail: sessionContext.customerEmail,
+          userId: sessionContext.userId,
+          orderId: orderResult.orderId,
+          details: {
+            recipientEmail: sessionContext.customerEmail,
+            recipientName: sessionContext.customerName,
+            orderId: orderResult.orderId,
+            items: evaluatedItems.map(i => `${i.quantity}x ${i.product.title}`),
+            totalPaid: totalGrandAmount
+          }
+        });
       }
     } catch (mailErr) {
       console.warn('Email dispatch warning:', mailErr.message);
     }
+
+    // Record Final Order Completed Audit Trail
+    await AuditService.log('ORDER_COMPLETED', {
+      userEmail: sessionContext.customerEmail,
+      userId: sessionContext.userId,
+      orderId: orderResult.orderId,
+      details: {
+        orderId: orderResult.orderId,
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        amount: totalGrandAmount,
+        itemCount: evaluatedItems.length,
+        items: evaluatedItems.map(i => ({ title: i.product.title, price: i.unitPrice, quantity: i.quantity, lineTotal: i.lineTotal }))
+      }
+    });
   }
 
   const itemsListFormatted = evaluatedItems.map(i => `- **${i.quantity}x ${i.product.title}**: ₹${i.lineTotal.toLocaleString()} (₹${i.unitPrice.toLocaleString()} each)`).join('\n');

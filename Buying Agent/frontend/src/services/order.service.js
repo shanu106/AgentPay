@@ -1,5 +1,14 @@
 import { API_BASE } from '../config/agent.config';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('buying_agent_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 const handleResponse = async (res) => {
   const text = await res.text();
   let data;
@@ -16,12 +25,12 @@ const handleResponse = async (res) => {
 
 export const orderService = {
   async fetchOrderById(orderId) {
-    const res = await fetch(`${API_BASE}/agent/orders/${orderId}`);
+    const res = await fetch(`${API_BASE}/agent/orders/${orderId}`, { headers: getAuthHeaders() });
     return handleResponse(res);
   },
 
   async fetchOrders() {
-    const res = await fetch(`${API_BASE}/agent/orders`);
+    const res = await fetch(`${API_BASE}/agent/orders`, { headers: getAuthHeaders() });
     return handleResponse(res);
   }
 };

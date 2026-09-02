@@ -1,10 +1,13 @@
 const userStore = require('../services/userStore.service');
 const emailService = require('../services/email.service');
+const AuditService = require('../services/order/AuditService');
 const PolicyEngine = require('../services/policy/PolicyEngine');
 const SpendingLedger = require('../services/policy/SpendingLedger');
 const { query } = require('../db/index');
 
 let activeUserEmail = 'nawaz@gmail.com';
+
+const getActiveUserEmail = () => activeUserEmail;
 
 /**
  * User Signup / Register
@@ -26,6 +29,21 @@ const signupUser = async (req, res) => {
 
     activeUserEmail = cleanEmail;
     const stats = await userStore.getSpendingStats(cleanEmail);
+
+    // Record Immutable Audit Trail
+    await AuditService.log('USER_SIGNUP', {
+      userEmail: cleanEmail,
+      userId: result.user.id,
+      details: {
+        name: result.user.name,
+        phone: phone || '',
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        userAgent: req.headers['user-agent']
+      }
+    });
+
+    res.cookie('agentpay_token', result.token, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
+    res.cookie('agentpay_email', cleanEmail, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
 
     res.json({
       success: true,
@@ -57,6 +75,20 @@ const loginUser = async (req, res) => {
     });
     const stats = await userStore.getSpendingStats(cleanEmail);
 
+    // Record Immutable Audit Trail
+    await AuditService.log('USER_LOGIN', {
+      userEmail: cleanEmail,
+      userId: result.user.id,
+      details: {
+        name: result.user.name,
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        userAgent: req.headers['user-agent']
+      }
+    });
+
+    res.cookie('agentpay_token', result.token, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
+    res.cookie('agentpay_email', cleanEmail, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
+
     res.json({
       success: true,
       message: `Logged in successfully as ${result.user.name} (${cleanEmail})`,
@@ -68,6 +100,157 @@ const loginUser = async (req, res) => {
     res.status(401).json({ success: false, message: err.message });
   }
 };
+
+/**
+ * Refresh Access Token using Refresh Token
+ */
+const refreshToken = async (req, res) => {
+  try {
+    const { refreshToken: token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required.'
+      });
+    }
+
+    const { verifyRefreshToken, generateTokens } = require('../middlewares/auth.middleware');
+    
+    // Verify the refresh token
+    const decoded = verifyRefreshToken(token);
+    if (!decoded) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token.'
+      });
+    }
+
+    // Get user from database
+    const user = await userStore.getUserById(decoded.id);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    // Generate new tokens
+    const tokens = generateTokens(user);
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully.',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Send OTP to Email
+ */
+const sendOtp = async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: 'Email address is required to receive OTP.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await userStore.sendOtp(cleanEmail, name);
+
+    // Record Audit Event
+    await AuditService.log('OTP_REQUESTED', {
+      userEmail: cleanEmail,
+      details: { clientIp: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1' }
+    });
+
+    res.json({
+      success: true,
+      message: `6-digit verification code sent to ${cleanEmail}`,
+      email: cleanEmail
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * Verify OTP & Login
+ */
+const verifyOtp = async (req, res) => {
+  try {
+    const { email, otp, name, phone } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+    }
+    if (!otp || !otp.trim()) {
+      return res.status(400).json({ success: false, message: '6-digit OTP code is required.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const result = await userStore.verifyOtp({ email: cleanEmail, otp, name, phone });
+    activeUserEmail = cleanEmail;
+
+    // Record Immutable Audit Trail
+    await AuditService.log('USER_LOGIN_OTP', {
+      userEmail: cleanEmail,
+      userId: result.user.id,
+      details: {
+        name: result.user.name,
+        ip: req.ip || req.headers['x-forwarded-for'] || '127.0.0.1',
+        userAgent: req.headers['user-agent']
+      }
+    });
+
+    res.cookie('agentpay_token', result.token, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
+    res.cookie('agentpay_email', cleanEmail, { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: false, sameSite: 'lax', path: '/' });
+
+    res.json({
+      success: true,
+      message: `Logged in successfully as ${result.user.name}`,
+      user: result.user,
+      token: result.token,
+      stats: result.stats
+    });
+  } catch (err) {
+    res.status(401).json({ success: false, message: err.message });
+  }
+};
+
+/**
+ * User Logout
+ */
+const logoutUser = async (req, res) => {
+  res.clearCookie('agentpay_token', { path: '/' });
+  res.clearCookie('agentpay_email', { path: '/' });
+  res.clearCookie('agentpay_user', { path: '/' });
+  res.json({ success: true, message: 'Signed out of session.' });
+};
+
+
+/**
+ * Get User Audit Logs
+ */
+const getUserAuditLogs = async (req, res) => {
+
+  try {
+    const email = (req.query.email || activeUserEmail).toLowerCase().trim();
+    const logs = await AuditService.getLogs({ userEmail: email, limit: 100 });
+    res.json({ success: true, count: logs.length, logs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
 /**
  * Get User Profile
@@ -373,12 +556,35 @@ const updateMerchantSettings = async (req, res) => {
   }
 };
 
-const getActiveUserEmail = () => activeUserEmail;
+/**
+ * Reset / Restore Spent Today to 0
+ */
+const resetSpentToday = async (req, res) => {
+  try {
+    const email = (req.body?.email || req.query?.email || req.user?.email || activeUserEmail).toLowerCase().trim();
+    const user = await userStore.getUser(email);
+    await SpendingLedger.resetSpentToday(user?.id, email);
+    const spendingStats = await SpendingLedger.getSpendingStats(user?.id, email);
+    res.json({
+      success: true,
+      message: 'Daily spent counter has been restored to ₹0.00.',
+      spendingStats
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 module.exports = {
+  getActiveUserEmail,
   signupUser,
   loginUser,
+  refreshToken,
+  sendOtp,
+  verifyOtp,
+  logoutUser,
   getUserProfile,
+  getUserAuditLogs,
   getAddresses,
   addAddress,
   setDefaultAddress,
@@ -392,7 +598,7 @@ module.exports = {
   getAuthorization,
   updateAuthorization,
   revokeAuthorization,
+  resetSpentToday,
   getMerchants,
-  updateMerchantSettings,
-  getActiveUserEmail
+  updateMerchantSettings
 };

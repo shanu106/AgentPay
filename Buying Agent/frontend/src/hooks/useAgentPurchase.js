@@ -72,11 +72,26 @@ export function useAgentPurchase() {
 
   const handlePaymentSuccess = (verificationResult) => {
     const verifiedData = verificationResult.verification || verificationResult;
-    setConfirmedOrder({
+    const completedOrder = {
       ...(activeOrder || agentResult?.order || {}),
       verifiedPayment: verifiedData,
-      status: 'confirmed'
-    });
+      status: 'confirmed',
+      paymentStatus: 'paid'
+    };
+
+    const successReply = `🎉 Order confirmed and paid successfully for ${completedOrder?.productTitle || 'your purchase'} (${completedOrder?.orderId || 'N/A'}).`;
+
+    setActiveOrder(completedOrder);
+    setConfirmedOrder(completedOrder);
+    setAgentResult(prev => prev ? {
+      ...prev,
+      autoPaid: true,
+      requiresConfirmation: false,
+      requiresCheckout: false,
+      success: true,
+      order: completedOrder,
+      reply: successReply
+    } : prev);
 
     setSteps(prev => [
       ...prev,

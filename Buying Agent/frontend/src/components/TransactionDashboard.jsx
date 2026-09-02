@@ -30,9 +30,10 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
   if (!isOpen && !isEmbedded) return null;
 
   const filteredOrders = orders.filter(o => {
-    if (filter === 'paid') return o.payment_status === 'paid';
-    if (filter === 'pending') return o.payment_status === 'pending';
-    if (filter === 'failed') return o.status === 'failed' || o.payment_status === 'failed';
+    const isPaid = o.payment_status === 'paid' || o.paymentStatus === 'paid' || o.status === 'confirmed' || o.status === 'order_confirmed' || o.status === 'completed';
+    if (filter === 'paid') return isPaid;
+    if (filter === 'pending') return !isPaid && o.status !== 'failed';
+    if (filter === 'failed') return o.status === 'failed' || o.payment_status === 'failed' || o.paymentStatus === 'failed';
     return true;
   });
 
@@ -65,8 +66,8 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
         <div className="tx-filter-bar" style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
           {[
             { id: 'all', label: `All Transactions (${orders.length})` },
-            { id: 'paid', label: `Captured / Paid (${orders.filter(o => o.payment_status === 'paid').length})` },
-            { id: 'pending', label: `Pending (${orders.filter(o => o.payment_status === 'pending').length})` }
+            { id: 'paid', label: `Captured / Paid (${orders.filter(o => o.payment_status === 'paid' || o.paymentStatus === 'paid' || o.status === 'confirmed' || o.status === 'order_confirmed' || o.status === 'completed').length})` },
+            { id: 'pending', label: `Pending (${orders.filter(o => o.payment_status === 'pending' || (o.paymentStatus === 'pending' && o.status !== 'confirmed' && o.status !== 'order_confirmed')).length})` }
           ].map(tab => (
             <button
               key={tab.id}
@@ -96,10 +97,14 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
             </div>
           ) : (
             filteredOrders.map(order => {
-              const isPaid = order.payment_status === 'paid';
+              const isPaid = order.payment_status === 'paid' || order.paymentStatus === 'paid' || order.status === 'confirmed' || order.status === 'order_confirmed' || order.status === 'completed';
+              const orderTitle = order.product_title || order.productTitle || 'Autonomous Order';
+              const orderId = order.order_id || order.orderId || 'ORD-SYNC';
+              const rzpId = order.razorpay_payment_id || order.razorpayPaymentId || order.razorpay_order_id || order.razorpayOrderId || (isPaid ? 'Captured ✓' : 'N/A');
+
               return (
                 <div
-                  key={order.order_id || order.id}
+                  key={orderId}
                   style={{
                     background: 'rgba(0, 0, 0, 0.25)',
                     border: `1px solid ${isPaid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)'}`,
@@ -111,7 +116,7 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontWeight: '700', fontSize: '14px', color: '#fff' }}>
-                          {order.product_title || 'Autonomous Order'}
+                          {orderTitle}
                         </span>
                         <span style={{
                           padding: '2px 8px',
@@ -125,7 +130,7 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                         </span>
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                        Order ID: <code style={{ color: '#93c5fd' }}>{order.order_id || order.orderId || 'ORD-SYNC'}</code> • {order.created_at || order.createdAt ? new Date(order.created_at || order.createdAt).toLocaleString() : new Date().toLocaleString()}
+                        Order ID: <code style={{ color: '#93c5fd' }}>{orderId}</code> • {order.created_at || order.createdAt ? new Date(order.created_at || order.createdAt).toLocaleString() : new Date().toLocaleString()}
                       </div>
                     </div>
 
@@ -134,7 +139,7 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                         ₹{parseFloat(order.amount || 0).toLocaleString()}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        Razorpay: <code style={{ color: '#93c5fd' }}>{order.razorpay_payment_id || order.razorpay_order_id || 'N/A'}</code>
+                        Razorpay: <code style={{ color: '#93c5fd' }}>{rzpId}</code>
                       </div>
                     </div>
                   </div>
@@ -144,8 +149,8 @@ const TransactionDashboard = ({ isOpen = true, onClose, userEmail, isEmbedded = 
                     <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px', marginTop: '6px' }}>
                       {order.items.map((it, idx) => (
                         <div key={idx} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>• {it.quantity || 1}x {it.title || it.productTitle}</span>
-                          <span>₹{(it.lineTotal || (it.unitPrice * (it.quantity || 1)) || 0).toLocaleString()}</span>
+                          <span>• {it.quantity || 1}x {it.title || it.productTitle || it.name || 'Item'}</span>
+                          <span>₹{parseFloat(it.lineTotal || (it.unitPrice * (it.quantity || 1)) || 0).toLocaleString()}</span>
                         </div>
                       ))}
                     </div>

@@ -57,7 +57,30 @@ export const userService = {
     return data;
   },
 
+  async sendOtp({ email, name }) {
+    const res = await fetch(`${API_BASE}/user/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name })
+    });
+    return handleResponse(res);
+  },
+
+  async verifyOtp({ email, otp, name, phone }) {
+    const res = await fetch(`${API_BASE}/user/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp, name, phone })
+    });
+    const data = await handleResponse(res);
+    if (data.token) {
+      localStorage.setItem('buying_agent_token', data.token);
+    }
+    return data;
+  },
+
   async fetchUserAddresses(email) {
+
     const res = await fetch(`${API_BASE}/user/address?email=${encodeURIComponent(email || '')}`, {
       headers: getAuthHeaders()
     });
@@ -160,6 +183,15 @@ export const userService = {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ authorizationId })
+    });
+    return handleResponse(res);
+  },
+
+  async resetSpentToday(email) {
+    const res = await fetch(`${API_BASE}/user/authorization/reset-spent`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ email })
     });
     return handleResponse(res);
   },

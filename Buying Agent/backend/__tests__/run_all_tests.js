@@ -13,6 +13,7 @@ const { runRaceConditionTests } = require('./race_condition.test');
 const { runPaymentTests } = require('./payment.test');
 const { runIdempotencyTests } = require('./idempotency.test');
 const { runE2ETests } = require('./e2e.test');
+const { runAuthCrossPlatformTests } = require('./auth_cross_platform.test');
 
 async function runAll() {
   console.log('====================================================');
@@ -34,8 +35,10 @@ async function runAll() {
     { name: '8. Race Condition & Spending Ledger Safety', fn: runRaceConditionTests },
     { name: '9. Razorpay Provider & Signature Verification', fn: runPaymentTests },
     { name: '10. Idempotency & Replay Protection Tests', fn: runIdempotencyTests },
-    { name: '11. End-to-End Autonomous Purchasing Tests', fn: runE2ETests }
+    { name: '11. End-to-End Autonomous Purchasing Tests', fn: runE2ETests },
+    { name: '12. Cross-Platform Auth & Multi-Merchant Audit Trail Tests', fn: runAuthCrossPlatformTests }
   ];
+
 
 
   for (const suite of suites) {

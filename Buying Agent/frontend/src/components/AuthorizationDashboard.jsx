@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
-import { fetchAuthorization, updateAuthorization, revokeAuthorization } from '../api/agentApi';
+import { X, RotateCcw } from 'lucide-react';
+import { fetchAuthorization, updateAuthorization, revokeAuthorization, resetSpentToday } from '../api/agentApi';
 
 const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpdated, isEmbedded = false }) => {
   const [loading, setLoading] = useState(false);
@@ -35,6 +35,24 @@ const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpd
       }
     } catch (err) {
       setErrorMessage(err.message || 'Failed to load authorization.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSpent = async () => {
+    setLoading(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const res = await resetSpentToday(userEmail);
+      if (res.spendingStats) {
+        setSpendingStats(res.spendingStats);
+      }
+      setStatusMessage('Daily spending counter successfully restored to ₹0.00.');
+      if (onPolicyUpdated) onPolicyUpdated();
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to reset spending counter.');
     } finally {
       setLoading(false);
     }
@@ -147,14 +165,40 @@ const AuthorizationDashboard = ({ isOpen = true, onClose, userEmail, onPolicyUpd
 
         {/* Daily Spending Progress Bar */}
         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '14px', borderRadius: '10px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '6px', color: 'var(--text-secondary)' }}>
-            <span>Daily Spending Ledger</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontWeight: '600', color: '#e2e8f0' }}>Daily Spending Ledger</span>
+              <button
+                type="button"
+                onClick={handleResetSpent}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  color: '#60a5fa',
+                  borderRadius: '4px',
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+                title="Restore daily spending counter to ₹0.00"
+              >
+                <RotateCcw size={11} /> Reset to ₹0
+              </button>
+            </div>
             <span style={{ fontWeight: '700', color: '#fff' }}>
-              ₹{spentToday.toLocaleString()} / ₹{currentDailyLimit.toLocaleString()} ({spentPct}%)
+              ₹{spentToday.toLocaleString('en-IN', { minimumFractionDigits: 2 })} / ₹{currentDailyLimit.toLocaleString()} ({spentPct}%)
             </span>
           </div>
           <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{ width: `${spentPct}%`, height: '100%', background: spentPct > 80 ? '#ef4444' : '#10b981', transition: 'width 0.3s ease' }}></div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+            <span>Auto-restores at 00:00 (Midnight)</span>
+            <span>Available today: <strong style={{ color: '#34d399' }}>₹{Math.max(0, currentDailyLimit - spentToday).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
           </div>
         </div>
 

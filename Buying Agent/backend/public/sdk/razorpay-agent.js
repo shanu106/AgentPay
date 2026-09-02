@@ -40,11 +40,38 @@
   let messages = [];
 
   let currentUser = {
-    name: 'Nawaz Khan',
-    email: 'nawaz@gmail.com',
-    phone: '+91 98765 43210',
+    name: 'Guest Buyer',
+    email: 'guest@example.com',
+    phone: '',
     addresses: [],
     paymentMethods: []
+  };
+
+  const getStoredSession = () => {
+    try {
+      const raw = localStorage.getItem('agentpay_user');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const getStoredToken = () => {
+    const session = getStoredSession();
+    if (session?.token) return session.token;
+
+    const legacyToken = localStorage.getItem('buying_agent_token') || localStorage.getItem('agentpay_token');
+    return legacyToken || null;
+  };
+
+  const getAuthHeaders = (extraHeaders = {}) => {
+    const token = getStoredToken();
+    return {
+      ...extraHeaders,
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
   };
 
   let currentAddress = {
@@ -72,10 +99,56 @@
 
   let allPaymentMethods = [];
 
+  // Check for existing user session
+  try {
+    const savedSession = getStoredSession();
+    if (savedSession) {
+      const sessionUser = savedSession.user || savedSession;
+      if (sessionUser?.email) {
+        currentUser = {
+          ...currentUser,
+          ...sessionUser,
+          email: sessionUser.email,
+          name: sessionUser.name || currentUser.name || 'Guest Buyer'
+        };
+      }
+    }
+  } catch (_) {}
+
+  function persistSession(data = {}) {
+    const user = data.user || currentUser || {};
+    const token = data.token || getStoredToken();
+    const nextUser = {
+      name: user.name || currentUser.name || 'Guest Buyer',
+      email: user.email || currentUser.email || 'guest@example.com',
+      phone: user.phone || currentUser.phone || '',
+      addresses: user.addresses || currentUser.addresses || [],
+      paymentMethods: user.paymentMethods || currentUser.paymentMethods || [],
+      token: token || null
+    };
+
+    currentUser = { ...currentUser, ...nextUser };
+
+    if (token) {
+      localStorage.setItem('buying_agent_token', token);
+      localStorage.setItem('agentpay_token', token);
+    } else {
+      localStorage.removeItem('buying_agent_token');
+      localStorage.removeItem('agentpay_token');
+    }
+    localStorage.setItem('agentpay_user', JSON.stringify(nextUser));
+    return nextUser;
+  }
+
   // Fetch initial profile & saved payment from agent backend
   function fetchUserProfile(email) {
-    const targetEmail = email || currentUser.email;
-    fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/profile?email=${encodeURIComponent(targetEmail)}`)
+    if (!email && (!currentUser.email || currentUser.email === 'guest@example.com')) return;
+    const targetEmail = (email || currentUser.email || '').trim();
+    if (!targetEmail) return;
+
+    fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/profile?email=${encodeURIComponent(targetEmail)}`, {
+      headers: getAuthHeaders()
+    })
       .then(r => r.json())
       .then(data => {
         if (data.success && data.user) {
@@ -96,6 +169,7 @@
   }
 
   fetchUserProfile();
+
 
   // Inject High-Trust Institutional CSS Styles
   const styleEl = document.createElement('style');
@@ -805,13 +879,13 @@
 
       <!-- User Profile & Delivery Memory Bar -->
       <div class="rzp-agent-profile-bar" id="rzp-agent-profile-bar">
-        <div class="rzp-profile-info">
+        <div class="rzp-profile-info" style="cursor:pointer;" id="rzp-agent-profile-info-click">
           <span style="font-weight:700; color:#0f172a;" id="rzp-profile-name">👤 ${currentUser.name}</span>
           <span style="color:#64748b;" id="rzp-profile-email">(${currentUser.email})</span>
           <span style="color:#0284c7; font-weight:600;" id="rzp-profile-addr">📍 ${currentAddress.label}</span>
         </div>
-        <button class="rzp-switch-btn" id="rzp-agent-switch-user-btn">
-          Profile / Address
+        <button class="rzp-switch-btn" id="rzp-agent-profile-btn" style="background:#0284c7; color:#ffffff; font-weight:700; display:flex; align-items:center; gap:4px; border-radius:6px; border:none; padding:5px 12px; cursor:pointer; font-size:12px;">
+          👤 Profile
         </button>
       </div>
 
@@ -861,31 +935,137 @@
         </button>
       </div>
 
-      <!-- User Profile & Delivery Modal -->
+      <!-- Unified Auth, Profile & Orders Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-user-modal">
         <div class="rzp-agent-modal-header">
-          <h4>👤 User Profile & Delivery Address</h4>
+          <h4 id="rzp-modal-title">👤 Account & Orders</h4>
           <button class="rzp-agent-btn-icon" id="rzp-agent-user-close-btn" style="background:#e2e8f0; color:#0f172a;">✕</button>
         </div>
-        <div class="rzp-agent-form-group">
-          <label>Email Address</label>
-          <input type="email" id="rzp-user-email-input" value="${currentUser.email}" placeholder="yourname@gmail.com" />
+
+        <!-- Segmented Navigation Tabs -->
+        <div class="rzp-segmented-tabs" style="margin-bottom:12px; display:flex; gap:3px; overflow-x:auto;">
+          <button class="rzp-tab-btn active" id="rzp-auth-tab-otp" type="button">⚡ Quick OTP</button>
+          <button class="rzp-tab-btn" id="rzp-auth-tab-login" type="button">🔑 Password</button>
+          <button class="rzp-tab-btn" id="rzp-auth-tab-signup" type="button">✨ Sign Up</button>
+          <button class="rzp-tab-btn" id="rzp-auth-tab-profile" type="button">👤 Profile</button>
+          <button class="rzp-tab-btn" id="rzp-auth-tab-orders" type="button">📦 Orders</button>
         </div>
-        <div class="rzp-agent-form-group">
-          <label>Full Name</label>
-          <input type="text" id="rzp-user-name-input" value="${currentUser.name}" />
+
+        <!-- Auth Status Alert -->
+        <div id="rzp-auth-alert" style="display:none; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:10px;"></div>
+
+        <!-- View 1: QUICK OTP LOGIN / SIGNIN -->
+        <div id="rzp-auth-view-otp">
+          <div class="rzp-agent-form-group" id="rzp-otp-step1-group">
+            <label>Enter Email Address</label>
+            <input type="email" id="rzp-otp-email" value="${currentUser.email !== 'guest@example.com' ? currentUser.email : ''}" placeholder="yourname@gmail.com" />
+          </div>
+          <div class="rzp-agent-form-group" id="rzp-otp-name-group">
+            <label>Full Name (Optional)</label>
+            <input type="text" id="rzp-otp-name" value="${currentUser.name !== 'Guest Buyer' ? currentUser.name : ''}" placeholder="e.g. Shahnawaz" />
+          </div>
+          <button class="rzp-agent-send-btn" id="rzp-otp-send-btn" style="width:100%; margin-top:6px;">
+            📩 Send Verification Code (OTP)
+          </button>
+
+          <!-- OTP Code Step 2 (hidden until OTP sent) -->
+          <div id="rzp-otp-step2-wrap" style="display:none; margin-top:14px; padding-top:12px; border-top:1px dashed #cbd5e1;">
+            <div class="rzp-agent-form-group">
+              <label>Enter 6-Digit OTP Code</label>
+              <input type="text" id="rzp-otp-code" placeholder="• • • • • •" maxlength="6" style="letter-spacing:6px; font-weight:800; text-align:center; font-size:18px;" />
+            </div>
+            <button class="rzp-agent-send-btn" id="rzp-otp-verify-btn" style="width:100%; margin-top:6px; background:#059669;">
+              ✅ Verify OTP & Sign In
+            </button>
+            <p style="font-size:11px; color:#64748b; margin-top:8px; text-align:center;">
+              Dispatched via Gmail SMTP. Demo Master OTP: <code style="color:#0284c7; font-weight:bold;">123456</code>
+            </p>
+          </div>
         </div>
-        <div class="rzp-agent-form-group">
-          <label>Delivery Address</label>
-          <select id="rzp-user-address-select">
-            <option value="home" selected>Home: Flat 402, Sunshine Heights, Koramangala - 560034</option>
-            <option value="office">Office: WeWork Galaxy, Residency Road - 560025</option>
-          </select>
+
+        <!-- View 2: PASSWORD LOGIN -->
+        <div id="rzp-auth-view-login" style="display:none;">
+          <div class="rzp-agent-form-group">
+            <label>Email Address</label>
+            <input type="email" id="rzp-login-email" value="${currentUser.email !== 'guest@example.com' ? currentUser.email : ''}" placeholder="yourname@gmail.com" />
+          </div>
+          <div class="rzp-agent-form-group">
+            <label>Password</label>
+            <input type="password" id="rzp-login-password" value="password123" placeholder="••••••••" />
+          </div>
+          <button class="rzp-agent-send-btn" id="rzp-auth-login-btn" style="width:100%; margin-top:8px;">
+            🔑 Log In with Password
+          </button>
         </div>
-        <button class="rzp-agent-send-btn" id="rzp-user-save-btn" style="width:100%; margin-top:10px;">
-          Save Profile
-        </button>
+
+        <!-- View 3: CREATE ACCOUNT / SIGN UP -->
+        <div id="rzp-auth-view-signup" style="display:none;">
+          <div class="rzp-agent-form-group">
+            <label>Full Name</label>
+            <input type="text" id="rzp-signup-name" placeholder="e.g. Rahul Sharma" />
+          </div>
+          <div class="rzp-agent-form-group">
+            <label>Email Address</label>
+            <input type="email" id="rzp-signup-email" placeholder="rahul@example.com" />
+          </div>
+          <div class="rzp-agent-form-group">
+            <label>Create Password</label>
+            <input type="password" id="rzp-signup-password" placeholder="At least 6 characters" />
+          </div>
+          <div class="rzp-agent-form-group">
+            <label>Phone Number (Optional)</label>
+            <input type="tel" id="rzp-signup-phone" placeholder="+91 9876543210" />
+          </div>
+          <button class="rzp-agent-send-btn" id="rzp-auth-signup-btn" style="width:100%; margin-top:8px;">
+            ✨ Create Agent Account
+          </button>
+        </div>
+
+        <!-- View 4: PROFILE & SETTINGS -->
+        <div id="rzp-auth-view-profile" style="display:none;">
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-weight:700; font-size:14px;" id="rzp-profile-card-name">${currentUser.name}</div>
+                <div style="font-size:12px; color:#64748b;" id="rzp-profile-card-email">${currentUser.email}</div>
+              </div>
+              <span style="background:#dcfce7; color:#166534; font-size:11px; padding:3px 8px; border-radius:999px; font-weight:700;">Active Account ✓</span>
+            </div>
+            <div style="font-size:12px; color:#0284c7; margin-top:8px; font-weight:600;" id="rzp-profile-card-limit">
+              🛡️ Pre-Authorized Limit: ₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}
+            </div>
+            <div style="font-size:12px; color:#475569; margin-top:4px;" id="rzp-profile-card-payment">
+              💳 Active Instrument: ${savedPayment.label || savedPayment.brand || 'Visa Debit'}
+            </div>
+          </div>
+          <div class="rzp-agent-form-group">
+            <label>Default Delivery Address</label>
+            <select id="rzp-user-address-select">
+              <option value="home" selected>Home: Flat 402, Sunshine Heights, Koramangala - 560034</option>
+              <option value="office">Office: WeWork Galaxy, Residency Road - 560025</option>
+            </select>
+          </div>
+          <button class="rzp-agent-send-btn" id="rzp-user-save-btn" style="width:100%; margin-top:6px;">
+            Save Address Preference
+          </button>
+          <button type="button" id="rzp-auth-logout-btn" style="width:100%; margin-top:10px; background:#fff1f2; color:#e11d48; border:1px solid #fecdd3; padding:8px; border-radius:6px; cursor:pointer; font-weight:700; font-size:12px;">
+            🚪 Sign Out / Switch Account
+          </button>
+        </div>
+
+        <!-- View 5: RECENT ORDERS TAB -->
+        <div id="rzp-auth-view-orders" style="display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-size:12px; font-weight:700; color:#475569;">📦 Order History & Invoices</div>
+            <button type="button" id="rzp-orders-refresh-btn" style="background:transparent; border:none; color:#0284c7; cursor:pointer; font-size:12px; font-weight:600;">🔄 Refresh</button>
+          </div>
+          <div id="rzp-orders-list" style="max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+            <div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px;">Loading your orders...</div>
+          </div>
+        </div>
       </div>
+
+
 
       <!-- Multiple Payment Options & Pre-Auth Settings Modal -->
       <div class="rzp-agent-modal" id="rzp-agent-settings-modal">
@@ -981,8 +1161,8 @@
   settingsCloseBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
 
   // Toggle User Login Modal
-  switchUserBtn.addEventListener('click', () => userModal.classList.add('open'));
-  userCloseBtn.addEventListener('click', () => userModal.classList.remove('open'));
+  switchUserBtn?.addEventListener('click', () => userModal?.classList.add('open'));
+  userCloseBtn?.addEventListener('click', () => userModal?.classList.remove('open'));
 
   // Segmented Tabs Handling
   ['cards', 'netbanking', 'upi'].forEach(tab => {
@@ -1075,7 +1255,7 @@
     // Save to backend default selection
     fetch(`${config.agentApi}/saved-payment-method`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         email: currentUser.email,
         methodId: savedPayment.id,
@@ -1090,40 +1270,402 @@
     });
   });
 
-  // Save User Profile & Address
-  userSaveBtn.addEventListener('click', () => {
-    const email = document.getElementById('rzp-user-email-input').value.trim() || 'nawaz@gmail.com';
-    const name = document.getElementById('rzp-user-name-input').value.trim() || 'Nawaz Khan';
-    const addrChoice = document.getElementById('rzp-user-address-select').value;
+  // Auth & Profile Modal Elements
+  const authTabOtp = document.getElementById('rzp-auth-tab-otp');
+  const authTabLogin = document.getElementById('rzp-auth-tab-login');
+  const authTabSignup = document.getElementById('rzp-auth-tab-signup');
+  const authTabProfile = document.getElementById('rzp-auth-tab-profile');
+  const authTabOrders = document.getElementById('rzp-auth-tab-orders');
 
-    currentUser.email = email;
-    currentUser.name = name;
+  const authViewOtp = document.getElementById('rzp-auth-view-otp');
+  const authViewLogin = document.getElementById('rzp-auth-view-login');
+  const authViewSignup = document.getElementById('rzp-auth-view-signup');
+  const authViewProfile = document.getElementById('rzp-auth-view-profile');
+  const authViewOrders = document.getElementById('rzp-auth-view-orders');
+  const authAlert = document.getElementById('rzp-auth-alert');
 
-    if (addrChoice === 'office') {
-      currentAddress = { id: 'addr_office', label: 'Office', recipientName: name, street: 'WeWork Galaxy, 43 Residency Road', area: 'Shanthala Nagar', city: 'Bengaluru', pincode: '560025' };
-    } else {
-      currentAddress = { id: 'addr_home', label: 'Home', recipientName: name, street: 'Flat 402, Sunshine Heights, 12th Main', area: 'Koramangala 4th Block', city: 'Bengaluru', pincode: '560034' };
+  function setAuthTab(tab) {
+    [authTabOtp, authTabLogin, authTabSignup, authTabProfile, authTabOrders].forEach(t => t?.classList.remove('active'));
+    [authViewOtp, authViewLogin, authViewSignup, authViewProfile, authViewOrders].forEach(v => { if (v) v.style.display = 'none'; });
+    if (authAlert) authAlert.style.display = 'none';
+
+    if (tab === 'otp') {
+      authTabOtp?.classList.add('active');
+      if (authViewOtp) authViewOtp.style.display = 'block';
+    } else if (tab === 'login') {
+      authTabLogin?.classList.add('active');
+      if (authViewLogin) authViewLogin.style.display = 'block';
+    } else if (tab === 'signup') {
+      authTabSignup?.classList.add('active');
+      if (authViewSignup) authViewSignup.style.display = 'block';
+    } else if (tab === 'profile') {
+      authTabProfile?.classList.add('active');
+      if (authViewProfile) authViewProfile.style.display = 'block';
+      const profName = document.getElementById('rzp-profile-card-name');
+      const profEmail = document.getElementById('rzp-profile-card-email');
+      const profLimit = document.getElementById('rzp-profile-card-limit');
+      const profPayment = document.getElementById('rzp-profile-card-payment');
+      if (profName) profName.textContent = currentUser.name || 'Nawaz Khan';
+      if (profEmail) profEmail.textContent = currentUser.email || 'nawaz@gmail.com';
+      if (profLimit) profLimit.textContent = `🛡️ Pre-Authorized Limit: ₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}`;
+      if (profPayment) profPayment.textContent = `💳 Active Instrument: ${savedPayment.label || savedPayment.brand || 'Visa Debit'}`;
+    } else if (tab === 'orders') {
+      authTabOrders?.classList.add('active');
+      if (authViewOrders) authViewOrders.style.display = 'block';
+      fetchAndRenderOrders();
+    }
+  }
+
+  authTabOtp?.addEventListener('click', () => setAuthTab('otp'));
+  authTabLogin?.addEventListener('click', () => setAuthTab('login'));
+  authTabSignup?.addEventListener('click', () => setAuthTab('signup'));
+  authTabProfile?.addEventListener('click', () => setAuthTab('profile'));
+  authTabOrders?.addEventListener('click', () => setAuthTab('orders'));
+
+  // Profile button in header opens Profile Modal
+  const profileBtn = document.getElementById('rzp-agent-profile-btn');
+  const profileInfoClick = document.getElementById('rzp-agent-profile-info-click');
+  
+  function openProfileModal(tab = 'profile') {
+    userModal.classList.add('open');
+    const isGuest = !currentUser || !currentUser.email || currentUser.email === 'guest@example.com';
+    setAuthTab(isGuest ? 'otp' : tab);
+  }
+
+  profileBtn?.addEventListener('click', () => openProfileModal('profile'));
+  profileInfoClick?.addEventListener('click', () => openProfileModal('profile'));
+
+  function showAuthAlert(msg, isSuccess = false) {
+    if (!authAlert) return;
+    authAlert.textContent = (isSuccess ? '✓ ' : '⚠️ ') + msg;
+    authAlert.style.display = 'block';
+    authAlert.style.background = isSuccess ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)';
+    authAlert.style.border = isSuccess ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)';
+    authAlert.style.color = isSuccess ? '#10b981' : '#ef4444';
+  }
+
+  // 1. Send OTP Handler
+  const otpSendBtn = document.getElementById('rzp-otp-send-btn');
+  const otpStep2Wrap = document.getElementById('rzp-otp-step2-wrap');
+  const otpCodeInput = document.getElementById('rzp-otp-code');
+
+  otpSendBtn?.addEventListener('click', async () => {
+    const email = document.getElementById('rzp-otp-email')?.value.trim();
+    const name = document.getElementById('rzp-otp-name')?.value.trim();
+    if (!email || !email.includes('@')) {
+      showAuthAlert('Please enter a valid email address.');
+      return;
     }
 
-    fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success && data.user) {
-          currentUser = { ...currentUser, ...data.user };
-          if (data.user.paymentMethods) allPaymentMethods = data.user.paymentMethods;
-        }
-        updateWidgetHeader();
-        userModal.classList.remove('open');
-        appendMessage({ role: 'agent', text: `👋 Logged in as **${currentUser.name}** (\`${currentUser.email}\`).\n📍 Active Address: **${currentAddress.label}** (${currentAddress.city})\n🛡️ Spending Limit: **₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}**` });
-      })
-      .catch(() => {
-        updateWidgetHeader();
-        userModal.classList.remove('open');
+    try {
+      otpSendBtn.disabled = true;
+      otpSendBtn.textContent = 'Sending OTP...';
+
+      const res = await fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name })
       });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to dispatch verification code.');
+      }
+
+      if (otpStep2Wrap) otpStep2Wrap.style.display = 'block';
+      showAuthAlert(`6-digit code sent to ${email}! Check inbox or use demo OTP 123456.`, true);
+      if (otpCodeInput) {
+        otpCodeInput.value = '123456';
+        otpCodeInput.focus();
+      }
+    } catch (err) {
+      showAuthAlert(err.message);
+    } finally {
+      otpSendBtn.disabled = false;
+      otpSendBtn.textContent = '📩 Resend Verification Code';
+    }
+  });
+
+  // 2. Verify OTP Handler
+  const otpVerifyBtn = document.getElementById('rzp-otp-verify-btn');
+  otpVerifyBtn?.addEventListener('click', async () => {
+    const email = document.getElementById('rzp-otp-email')?.value.trim();
+    const name = document.getElementById('rzp-otp-name')?.value.trim();
+    const otp = otpCodeInput?.value.trim();
+
+    if (!email) {
+      showAuthAlert('Please enter your email.');
+      return;
+    }
+    if (!otp || otp.length < 4) {
+      showAuthAlert('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    try {
+      otpVerifyBtn.disabled = true;
+      otpVerifyBtn.textContent = 'Verifying...';
+
+      const res = await fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, name })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Invalid or expired verification code.');
+      }
+
+      currentUser = { ...currentUser, ...data.user };
+      if (data.user.paymentMethods && data.user.paymentMethods.length > 0) {
+        allPaymentMethods = data.user.paymentMethods;
+        const def = data.user.paymentMethods.find(m => m.isDefault) || data.user.paymentMethods[0];
+        savedPayment = { ...savedPayment, ...def };
+      }
+      if (data.user.addresses && data.user.addresses.length > 0) {
+        currentAddress = data.user.addresses.find(a => a.isDefault) || data.user.addresses[0];
+      }
+
+      persistSession({ user: data.user, token: data.token });
+
+      showAuthAlert(`Verified & Logged in as ${data.user.name}!`, true);
+      updateWidgetHeader();
+      renderPaymentOptionsInSettings();
+
+      setTimeout(() => {
+        // CLOSE MODAL IMMEDIATELY
+        userModal.classList.remove('open');
+        appendMessage({
+          role: 'agent',
+          text: `👋 **Welcome, ${currentUser.name}!**\n\n- **Account**: \`${currentUser.email}\`\n- **Pre-Authorized Limit**: **₹${(savedPayment.autoDebitLimit || 15000).toLocaleString()}**\n- **Payment Instrument**: ${savedPayment.label || savedPayment.brand}\n\nYour session is verified. You can now place 0-click autonomous orders!`
+        });
+      }, 400);
+    } catch (err) {
+      showAuthAlert(err.message);
+    } finally {
+      otpVerifyBtn.disabled = false;
+      otpVerifyBtn.textContent = '✅ Verify OTP & Sign In';
+    }
+  });
+
+  // 3. Password Login Submit
+  const authLoginBtn = document.getElementById('rzp-auth-login-btn');
+  authLoginBtn?.addEventListener('click', async () => {
+    const email = document.getElementById('rzp-login-email')?.value.trim();
+    const password = document.getElementById('rzp-login-password')?.value.trim();
+    if (!email) {
+      showAuthAlert('Please enter your email address.');
+      return;
+    }
+
+    try {
+      authLoginBtn.disabled = true;
+      authLoginBtn.textContent = 'Logging in...';
+
+      const res = await fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Invalid email or password.');
+      }
+
+      currentUser = { ...currentUser, ...data.user };
+      if (data.user.paymentMethods && data.user.paymentMethods.length > 0) {
+        allPaymentMethods = data.user.paymentMethods;
+        const def = data.user.paymentMethods.find(m => m.isDefault) || data.user.paymentMethods[0];
+        savedPayment = { ...savedPayment, ...def };
+      }
+      if (data.user.addresses && data.user.addresses.length > 0) {
+        currentAddress = data.user.addresses.find(a => a.isDefault) || data.user.addresses[0];
+      }
+
+      persistSession({ user: data.user, token: data.token });
+
+      showAuthAlert(`Logged in as ${data.user.name}!`, true);
+      updateWidgetHeader();
+      renderPaymentOptionsInSettings();
+
+      setTimeout(() => {
+        // CLOSE MODAL IMMEDIATELY
+        userModal.classList.remove('open');
+        appendMessage({
+          role: 'agent',
+          text: `👋 **Welcome back, ${currentUser.name}!** (\`${currentUser.email}\`)`
+        });
+      }, 400);
+    } catch (err) {
+      showAuthAlert(err.message);
+    } finally {
+      authLoginBtn.disabled = false;
+      authLoginBtn.textContent = '🔑 Log In with Password';
+    }
+  });
+
+  // 4. Signup Submit
+  const authSignupBtn = document.getElementById('rzp-auth-signup-btn');
+  authSignupBtn?.addEventListener('click', async () => {
+    const name = document.getElementById('rzp-signup-name')?.value.trim();
+    const email = document.getElementById('rzp-signup-email')?.value.trim();
+    const password = document.getElementById('rzp-signup-password')?.value.trim();
+    const phone = document.getElementById('rzp-signup-phone')?.value.trim();
+
+    if (!email) {
+      showAuthAlert('Please enter a valid email address.');
+      return;
+    }
+    if (!name) {
+      showAuthAlert('Please enter your full name.');
+      return;
+    }
+
+    try {
+      authSignupBtn.disabled = true;
+      authSignupBtn.textContent = 'Creating Account...';
+
+      const res = await fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password: password || 'password123', phone })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to create account.');
+      }
+
+      currentUser = { ...currentUser, ...data.user };
+      if (data.user.paymentMethods && data.user.paymentMethods.length > 0) {
+        allPaymentMethods = data.user.paymentMethods;
+        const def = data.user.paymentMethods.find(m => m.isDefault) || data.user.paymentMethods[0];
+        savedPayment = { ...savedPayment, ...def };
+      }
+      if (data.user.addresses && data.user.addresses.length > 0) {
+        currentAddress = data.user.addresses.find(a => a.isDefault) || data.user.addresses[0];
+      }
+
+      persistSession({ user: data.user, token: data.token });
+
+      showAuthAlert(`Account created for ${data.user.name}!`, true);
+      updateWidgetHeader();
+      renderPaymentOptionsInSettings();
+
+      setTimeout(() => {
+        // CLOSE MODAL IMMEDIATELY
+        userModal.classList.remove('open');
+        appendMessage({
+          role: 'agent',
+          text: `🎉 **Account Created Successfully!** Welcome, **${currentUser.name}**.`
+        });
+      }, 400);
+    } catch (err) {
+      showAuthAlert(err.message);
+    } finally {
+      authSignupBtn.disabled = false;
+      authSignupBtn.textContent = '✨ Create Agent Account';
+    }
+  });
+
+  // 5. Fetch and Render Orders Tab
+  async function fetchAndRenderOrders() {
+    const ordersList = document.getElementById('rzp-orders-list');
+    if (!ordersList) return;
+
+    const email = currentUser?.email || 'nawaz@gmail.com';
+    ordersList.innerHTML = '<div style="text-align:center; padding:16px; color:#94a3b8; font-size:12px;">⏳ Loading orders...</div>';
+
+    try {
+      const res = await fetch(`${config.agentApi.replace(/\/agent$/, '')}/user/orders?email=${encodeURIComponent(email)}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      const orders = data.orders || [];
+
+      if (orders.length === 0) {
+        ordersList.innerHTML = `
+          <div style="text-align:center; padding:24px 12px; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1;">
+            <div style="font-size:24px; margin-bottom:6px;">🛍️</div>
+            <div style="font-weight:700; font-size:13px; color:#334155;">No Orders Found</div>
+            <div style="font-size:11px; color:#64748b; margin-top:4px;">Ask or speak to the agent to place your first autonomous order!</div>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+      orders.forEach(o => {
+        const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently';
+        const isPaid = (o.paymentStatus || o.status || '').toLowerCase().includes('paid') || (o.status || '').toLowerCase().includes('completed');
+        const badgeBg = isPaid ? '#dcfce7' : '#fef3c7';
+        const badgeColor = isPaid ? '#166534' : '#92400e';
+        const badgeText = isPaid ? 'Captured ✓' : (o.status || 'Pending');
+
+        html += `
+          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; font-size:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <span style="font-weight:700; color:#0f172a;">#${escapeHtml(o.orderId || 'ORD')}</span>
+                <div style="font-size:11px; color:#64748b;">${dateStr}</div>
+              </div>
+              <div style="text-align:right;">
+                <span style="font-weight:800; font-size:13px; color:#0f172a;">₹${(o.amount || 0).toLocaleString()}</span>
+                <div><span style="background:${badgeBg}; color:${badgeColor}; font-size:10px; padding:2px 6px; border-radius:999px; font-weight:700;">${badgeText}</span></div>
+              </div>
+            </div>
+            <div style="margin-top:6px; font-weight:600; color:#334155;">
+              ${escapeHtml(o.productTitle || (o.items && o.items[0]?.title) || 'Merchant Item')}
+            </div>
+            <div style="font-size:11px; color:#64748b; margin-top:4px; display:flex; justify-content:space-between;">
+              <span>💳 ${escapeHtml(o.paymentMethod?.label || o.paymentMethod?.brand || 'Razorpay Test')}</span>
+              <span>🔒 ${escapeHtml(o.razorpayPaymentId || o.razorpayOrderId || '')}</span>
+            </div>
+          </div>
+        `;
+      });
+      ordersList.innerHTML = html;
+    } catch (err) {
+      ordersList.innerHTML = `<div style="text-align:center; padding:12px; color:#ef4444; font-size:11px;">Failed to load orders: ${err.message}</div>`;
+    }
+  }
+
+  document.getElementById('rzp-orders-refresh-btn')?.addEventListener('click', fetchAndRenderOrders);
+
+  // 6. Handle Logout
+  const authLogoutBtn = document.getElementById('rzp-auth-logout-btn');
+  authLogoutBtn?.addEventListener('click', () => {
+    localStorage.removeItem('agentpay_user');
+    localStorage.removeItem('buying_agent_token');
+    localStorage.removeItem('agentpay_token');
+    currentUser = {
+      name: 'Guest Buyer',
+      email: 'guest@example.com',
+      phone: '',
+      addresses: [],
+      paymentMethods: []
+    };
+    updateWidgetHeader();
+    userModal?.classList.remove('open');
+    appendMessage({
+      role: 'agent',
+      text: `👋 You have signed out. Click **👤 Profile** to log in with OTP.`
+    });
+  });
+
+  // Save User Address Preference
+  userSaveBtn?.addEventListener('click', () => {
+    const addrChoice = document.getElementById('rzp-user-address-select')?.value;
+    if (addrChoice === 'office') {
+      currentAddress = { id: 'addr_office', label: 'Office', recipientName: currentUser.name, street: 'WeWork Galaxy, 43 Residency Road', area: 'Shanthala Nagar', city: 'Bengaluru', pincode: '560025' };
+    } else {
+      currentAddress = { id: 'addr_home', label: 'Home', recipientName: currentUser.name, street: 'Flat 402, Sunshine Heights, 12th Main', area: 'Koramangala 4th Block', city: 'Bengaluru', pincode: '560034' };
+    }
+    updateWidgetHeader();
+    userModal.classList.remove('open');
+    appendMessage({ role: 'agent', text: `📍 Delivery address updated to **${currentAddress.label}** (${currentAddress.city} - ${currentAddress.pincode}).` });
   });
 
   function updateWidgetHeader() {
@@ -1139,6 +1681,7 @@
     if (profileEmailEl) profileEmailEl.textContent = `(${currentUser.email || 'nawaz@gmail.com'})`;
     if (profileAddrEl) profileAddrEl.textContent = `📍 ${currentAddress.label || 'Home'}`;
   }
+
 
   // Dynamic Merchant Niche Suggestions Loader
   function fetchMerchantProductsAndRenderNicheChips() {
@@ -1253,6 +1796,13 @@
     // Attach click listeners
     container.querySelectorAll('.rzp-agent-chip').forEach(chip => {
       chip.addEventListener('click', () => {
+        const isGuest = !currentUser || !currentUser.email || currentUser.email === 'guest@example.com';
+        if (isGuest) {
+          userModal.classList.add('open');
+          setAuthTab('otp');
+          showAuthAlert('Please sign in with your email & OTP to place orders.');
+          return;
+        }
         const prompt = chip.getAttribute('data-prompt');
         if (prompt) {
           inputEl.value = prompt;
@@ -1310,17 +1860,21 @@
       appendMessage({
         role: 'agent',
         text: isHindi 
-          ? '🇮🇳 **भाषा बदलकर हिंदी कर दी गई है।** अब आप हिंदी में बोलकर या लिखकर ऑर्डर कर सकते हैं।' 
-          : '🇬🇧 **Language set to English.** You can now speak or type your purchase orders in English.'
+          ? '🇮🇳 **हिंदी भाषा सक्रिय!** अब आप हिंदी में बोलकर या लिखकर सुरक्षित ऑर्डर कर सकते हैं।' 
+          : '🌐 **Language set to English.** You can speak or type your orders naturally.'
       });
     });
   }
 
   function startListening() {
     if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Google Chrome, Edge, or Safari.');
+      appendMessage({
+        role: 'agent',
+        text: '⚠️ Voice recognition is not supported in this browser. Please use Chrome, Edge, or Safari.'
+      });
       return;
     }
+
     try {
       if (currentAudio) {
         currentAudio.pause();
@@ -1381,6 +1935,14 @@
 
   if (micBtn) {
     micBtn.addEventListener('click', () => {
+      const isGuest = !currentUser || !currentUser.email || currentUser.email === 'guest@example.com';
+      if (isGuest) {
+        userModal.classList.add('open');
+        setAuthTab('otp');
+        showAuthAlert('Please sign in with your email & OTP before speaking your order.');
+        return;
+      }
+
       if (isListening) {
         if (recognition) {
           try { recognition.stop(); } catch (_) {}
@@ -1453,11 +2015,21 @@
     const query = inputEl.value.trim();
     if (!query || isLoading) return;
 
+    // Login Gate Enforcement
+    const isGuest = !currentUser || !currentUser.email || currentUser.email === 'guest@example.com';
+    if (isGuest) {
+      userModal.classList.add('open');
+      setAuthTab('otp');
+      showAuthAlert('Please log in with Email & OTP to use the Autonomous Agent.');
+      return;
+    }
+
     isLoading = true;
     sendBtn.disabled = true;
     inputEl.value = '';
 
     if (emptyState) emptyState.style.display = 'none';
+
 
     // 1. Add User Message
     appendMessage({ role: 'user', text: query });
@@ -1473,7 +2045,7 @@
       // 3. Call Agent Backend Purchase Endpoint (with language setting)
       const response = await fetch(`${config.agentApi}/purchase`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           message: query,
           userEmail: currentUser.email,

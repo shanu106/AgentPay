@@ -1,6 +1,9 @@
 import React from 'react';
 
-function AgentActivityPanel({ steps = [], toolCalls = [], loading }) {
+function AgentActivityPanel({ steps = [], toolCalls = [], loading, agentResult, activeOrder, confirmedOrder, onConfirmCheckout }) {
+  const needsConfirmation = agentResult && (agentResult.requiresConfirmation || agentResult.requiresCheckout) && !confirmedOrder && (activeOrder || agentResult.order);
+  const amountToPay = activeOrder?.amount || agentResult?.order?.amount || 0;
+
   return (
     <div className="activity-panel">
       <div className="activity-panel-header">
@@ -45,9 +48,72 @@ function AgentActivityPanel({ steps = [], toolCalls = [], loading }) {
             </div>
           );
         })}
+
+        {/* Prominent Confirmation CTA Banner when Amount Exceeds Auto-Approval */}
+        {needsConfirmation && (
+          <div style={{
+            marginTop: '14px',
+            padding: '14px 16px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(99, 102, 241, 0.12))',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            boxShadow: '0 4px 18px rgba(0, 0, 0, 0.25)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                <span style={{ fontWeight: '700', fontSize: '0.88rem', color: '#fbbf24' }}>
+                  User Confirmation Required
+                </span>
+              </div>
+              <span style={{
+                fontSize: '0.92rem',
+                fontWeight: '800',
+                color: '#fff',
+                background: 'rgba(0, 0, 0, 0.4)',
+                padding: '3px 8px',
+                borderRadius: '6px'
+              }}>
+                ₹{amountToPay.toLocaleString()}
+              </span>
+            </div>
+            
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+              {agentResult.order?.productTitle || 'Your order'} exceeds the automatic approval limit. Click below to review and authorize payment.
+            </p>
+
+            <button
+              type="button"
+              className="btn-primary-blue"
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                fontSize: '0.88rem',
+                fontWeight: '700',
+                background: 'linear-gradient(135deg, #00BAF2 0%, #0082c8 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(0, 186, 242, 0.35)'
+              }}
+              onClick={onConfirmCheckout}
+            >
+              <span>💳 Confirm & Complete Razorpay Checkout (₹{amountToPay.toLocaleString()})</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default AgentActivityPanel;
+

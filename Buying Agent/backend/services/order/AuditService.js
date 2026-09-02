@@ -85,10 +85,10 @@ class AuditService {
   }
 
   /**
-   * Fetch recent audit trail for a user or global
+   * Fetch recent audit trail for a user or global from PostgreSQL
    */
   static async getLogs(options = {}) {
-    const { userEmail, limit = 50, actionType } = options;
+    const { userEmail, limit = 100, actionType } = options;
     try {
       let queryText = 'SELECT * FROM audit_logs';
       const params = [];
@@ -107,7 +107,33 @@ class AuditService {
       params.push(limit);
 
       const res = await query(queryText, params);
-      return res.rows;
+      return res.rows.map(r => {
+        let parsedDetails = {};
+        try {
+          parsedDetails = typeof r.details === 'string' ? JSON.parse(r.details || '{}') : (r.details || {});
+        } catch (_) {
+          parsedDetails = { raw: r.details };
+        }
+
+        return {
+          id: r.id,
+          userId: r.user_id,
+          user_id: r.user_id,
+          userEmail: r.user_email,
+          user_email: r.user_email,
+          agentSessionId: r.agent_session_id,
+          agent_session_id: r.agent_session_id,
+          orderId: r.order_id,
+          order_id: r.order_id,
+          requestId: r.request_id,
+          request_id: r.request_id,
+          type: r.action_type,
+          actionType: r.action_type,
+          action_type: r.action_type,
+          details: parsedDetails,
+          timestamp: r.timestamp
+        };
+      });
     } catch (err) {
       console.error('[AuditService] Query failure:', err.message);
       return [];

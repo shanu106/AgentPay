@@ -2,6 +2,8 @@ const { processPurchaseRequest } = require('../services/buyerAgent');
 const { executeTool, buyerOrders, auditLogs } = require('../tools/index');
 const userStore = require('../services/userStore.service');
 const voiceService = require('../services/voice.service');
+const SpendingLedger = require('../services/policy/SpendingLedger');
+const AuditService = require('../services/order/AuditService');
 const { getActiveUserEmail } = require('./user.controller');
 
 const handlePurchase = async (req, res) => {
@@ -140,6 +142,31 @@ const verifyCheckout = async (req, res) => {
       return res.status(400).json({ success: false, message: result.error });
     }
 
+    const order = buyerOrders[orderId];
+    if (order) {
+      const email = order.customerEmail || getActiveUserEmail();
+      try {
+        const u = await userStore.getUser(email);
+        if (u && u.id && order.amount) {
+          await SpendingLedger.reserveSpend(u.id, parseFloat(order.amount));
+        }
+        await userStore.saveOrder(email, {
+          orderId: order.orderId,
+          razorpayOrderId: razorpay_order_id || order.razorpayOrderId,
+          paymentId: razorpay_payment_id || result.paymentId,
+          amount: order.amount,
+          quantity: order.quantity || 1,
+          items: order.items || [],
+          productTitle: order.productTitle,
+          merchant: order.merchantApiBase,
+          deliveryAddress: order.deliveryAddress,
+          paymentMethod: order.paymentMethodUsed || { brand: 'Razorpay', label: 'Online Payment' }
+        });
+      } catch (err) {
+        console.warn('[verifyCheckout] Order sync note:', err.message);
+      }
+    }
+
     res.json({
       success: true,
       message: 'Payment verified and order confirmed successfully.',
@@ -170,12 +197,24 @@ const getOrderById = async (req, res) => {
   res.json({ success: true, order });
 };
 
-const getAuditLogs = (req, res) => {
-  res.json({
-    success: true,
-    count: auditLogs.length,
-    logs: auditLogs.slice(-50).reverse()
-  });
+const getAuditLogs = async (req, res) => {
+  try {
+    const email = req.query.email || null;
+    const limit = parseInt(req.query.limit, 10) || 100;
+    const actionType = req.query.actionType || null;
+    const logs = await AuditService.getLogs({ userEmail: email, limit, actionType });
+    res.json({
+      success: true,
+      count: logs.length,
+      logs
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Failed to fetch audit logs from database',
+      logs: []
+    });
+  }
 };
 
 const getConfig = (req, res) => {

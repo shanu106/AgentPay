@@ -3,6 +3,10 @@ const router = express.Router();
 const agentController = require('../controllers/agent.controller');
 const { validatePurchaseInput } = require('../middlewares/validation.middleware');
 const { purchaseRateLimiter } = require('../middlewares/rateLimit.middleware');
+const { authenticateToken } = require('../middlewares/auth.middleware');
+
+// All agent routes require authentication
+router.use(authenticateToken);
 
 // Autonomous Purchase (Rate-limited & Validated)
 router.post('/purchase', purchaseRateLimiter, validatePurchaseInput, agentController.handlePurchase);
@@ -25,4 +29,3 @@ router.get('/audit-logs', agentController.getAuditLogs);
 router.get('/merchants/scores', agentController.getMerchantScores);
 
 module.exports = router;
-

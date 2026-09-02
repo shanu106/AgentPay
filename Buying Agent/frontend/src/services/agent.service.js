@@ -1,5 +1,14 @@
 import { API_BASE } from '../config/agent.config';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('buying_agent_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 const handleResponse = async (res) => {
   const text = await res.text();
   let data;
@@ -27,7 +36,7 @@ export const agentService = {
   }) {
     const res = await fetch(`${API_BASE}/agent/purchase`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         message,
         customApiKey,
@@ -43,19 +52,23 @@ export const agentService = {
   },
 
   async fetchAuditLogs() {
-    const res = await fetch(`${API_BASE}/agent/audit-logs`);
+    const res = await fetch(`${API_BASE}/agent/audit-logs`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   async fetchConfig() {
-    const res = await fetch(`${API_BASE}/config`);
+    const res = await fetch(`${API_BASE}/config`, {
+      headers: getAuthHeaders()
+    });
     return handleResponse(res);
   },
 
   async updateApiKey(apiKey) {
     const res = await fetch(`${API_BASE}/config/key`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ apiKey })
     });
     return handleResponse(res);

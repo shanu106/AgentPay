@@ -190,7 +190,70 @@ class EmailService {
     }
   }
 
+  async sendOtpEmail({ to, otp, userName }) {
+    const recipient = (to || '').toLowerCase().trim();
+    const name = userName || recipient.split('@')[0] || 'User';
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+          .container { max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+          .header { background: linear-gradient(135deg, #0284c7, #2563eb); padding: 24px; color: #ffffff; text-align: center; }
+          .header h1 { margin: 0 0 6px 0; font-size: 22px; font-weight: 700; }
+          .content { padding: 28px 24px; color: #334155; text-align: center; }
+          .otp-box { display: inline-block; background: #f8fafc; border: 2px dashed #0284c7; border-radius: 12px; padding: 16px 32px; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0284c7; margin: 20px 0; font-family: monospace; }
+          .footer { padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔐 AgentPay Verification Code</h1>
+          </div>
+          <div class="content">
+            <p style="font-size: 15px; margin-bottom: 8px;">Hello <strong>${name}</strong>,</p>
+            <p style="font-size: 14px; color: #64748b; margin-top: 0;">Use the 6-digit one-time password (OTP) below to securely log in to your autonomous shopping agent:</p>
+            
+            <div class="otp-box">${otp}</div>
+            
+            <p style="font-size: 12px; color: #94a3b8; margin-top: 16px;">This code is valid for 10 minutes. If you did not request this code, please ignore this email.</p>
+          </div>
+          <div class="footer">
+            © 2026 AgentPay Autonomous Commerce Platform • Powered by Razorpay
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const { isLive, gmailUser, transporter } = this.getTransporter();
+
+    if (isLive && transporter) {
+      try {
+        const info = await transporter.sendMail({
+          from: `"AgentPay Security" <${gmailUser}>`,
+          to: recipient,
+          subject: `🔐 Your AgentPay Verification Code is ${otp}`,
+          html: htmlContent
+        });
+        console.log(`\n✅ [OTP DELIVERED VIA GMAIL TO: ${recipient}] Code: ${otp}`);
+        return { success: true, messageId: info.messageId, mode: 'gmail_smtp' };
+      } catch (err) {
+        console.error(`\n❌ [OTP EMAIL SMTP FAILED]: ${err.message}`);
+        return { success: false, error: err.message, mode: 'failed_smtp' };
+      }
+    } else {
+      console.log(`\n📧 [OTP SIMULATED DISPATCH TO: ${recipient}] Code: ${otp}`);
+      return { success: true, mode: 'simulated', otp };
+    }
+  }
+
   getSentEmails(userEmail) {
+
     if (!userEmail) return this.sentEmails;
     return this.sentEmails.filter(e => e.to.toLowerCase() === userEmail.toLowerCase());
   }

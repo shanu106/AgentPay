@@ -120,19 +120,19 @@ class PolicyEngine {
 
     // 5. Check daily spending limit (with automatic date reset)
     const dailyLimit = parseFloat(auth.daily_spending_limit);
-    let spentToday = parseFloat(auth.spent_today || 0);
+    let spentToday = auth.is_today === false ? 0 : parseFloat(auth.spent_today || 0);
     const resetDate = auth.spent_today_reset_date;
     const todayStr = now.toISOString().split('T')[0];
     const resetDateStr = resetDate instanceof Date 
       ? resetDate.toISOString().split('T')[0] 
       : (resetDate ? String(resetDate).split('T')[0] : null);
 
-    if (resetDateStr && resetDateStr !== todayStr) {
+    if (auth.is_today === false || (resetDateStr && resetDateStr !== todayStr)) {
       // Reset daily spending counter
       spentToday = 0;
       await query(
-        `UPDATE agent_authorizations SET spent_today = 0, spent_today_reset_date = $1 WHERE id = $2`,
-        [todayStr, auth.id]
+        `UPDATE agent_authorizations SET spent_today = 0, spent_today_reset_date = CURRENT_DATE WHERE id = $1`,
+        [auth.id]
       );
     }
 
@@ -222,7 +222,8 @@ class PolicyEngine {
     if (!userId) return null;
     try {
       const res = await query(
-        `SELECT * FROM agent_authorizations 
+        `SELECT *, (spent_today_reset_date = CURRENT_DATE) AS is_today 
+         FROM agent_authorizations 
          WHERE user_id = $1 AND status = 'active' 
          ORDER BY created_at DESC LIMIT 1`,
         [userId]
@@ -241,7 +242,8 @@ class PolicyEngine {
     if (!email) return null;
     try {
       const res = await query(
-        `SELECT aa.* FROM agent_authorizations aa
+        `SELECT aa.*, (aa.spent_today_reset_date = CURRENT_DATE) AS is_today 
+         FROM agent_authorizations aa
          JOIN users u ON u.id = aa.user_id
          WHERE u.email = $1 AND aa.status = 'active'
          ORDER BY aa.created_at DESC LIMIT 1`,

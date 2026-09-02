@@ -3,11 +3,22 @@ const router = express.Router();
 const userController = require('../controllers/user.controller');
 const { validateAuthorizationInput } = require('../middlewares/validation.middleware');
 const { authRateLimiter } = require('../middlewares/rateLimit.middleware');
+const { authenticateToken } = require('../middlewares/auth.middleware');
 
-// User Authentication & Profile
+// Public routes (no auth required)
 router.post('/signup', authRateLimiter, userController.signupUser);
 router.post('/login', authRateLimiter, userController.loginUser);
+router.post('/refresh-token', userController.refreshToken);
+
+// Protected routes (auth required for all below)
+router.use(authenticateToken);
+
+// User Authentication & Profile
+router.post('/send-otp', authRateLimiter, userController.sendOtp);
+router.post('/verify-otp', authRateLimiter, userController.verifyOtp);
+router.post('/logout', userController.logoutUser);
 router.get('/profile', userController.getUserProfile);
+router.get('/audit-logs', userController.getUserAuditLogs);
 
 // Address Management
 router.get('/address', userController.getAddresses);
@@ -30,6 +41,8 @@ router.delete('/payment-methods', userController.deletePaymentMethod);
 router.get('/authorization', userController.getAuthorization);
 router.post('/authorization', validateAuthorizationInput, userController.updateAuthorization);
 router.post('/authorization/revoke', userController.revokeAuthorization);
+router.post('/authorization/reset-spent', userController.resetSpentToday);
+router.get('/authorization/reset-spent', userController.resetSpentToday);
 
 // Merchant AI-Commerce Settings
 router.get('/merchants', userController.getMerchants);

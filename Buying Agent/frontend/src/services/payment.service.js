@@ -1,5 +1,14 @@
 import { API_BASE } from '../config/agent.config';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('buying_agent_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 const handleResponse = async (res) => {
   const text = await res.text();
   let data;
@@ -32,7 +41,7 @@ export const paymentService = {
   async verifyPayment({ orderId, razorpay_order_id, razorpay_payment_id, razorpay_signature }) {
     const res = await fetch(`${API_BASE}/agent/verify-checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ orderId, razorpay_order_id, razorpay_payment_id, razorpay_signature })
     });
     return handleResponse(res);
@@ -40,14 +49,14 @@ export const paymentService = {
 
   async fetchSavedPaymentMethod(email) {
     const url = email ? `${API_BASE}/agent/saved-payment-method?email=${encodeURIComponent(email)}` : `${API_BASE}/agent/saved-payment-method`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     return handleResponse(res);
   },
 
   async updateSavedPaymentMethod(paymentData) {
     const res = await fetch(`${API_BASE}/agent/saved-payment-method`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(paymentData)
     });
     return handleResponse(res);

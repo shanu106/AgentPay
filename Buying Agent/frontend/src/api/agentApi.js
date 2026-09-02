@@ -18,7 +18,10 @@ export const updateApiKey = agentService.updateApiKey;
 // PostgreSQL User Authentication, Addresses, Payment Methods & Orders
 export const signupUser = userService.signup;
 export const loginUser = userService.login;
+export const sendOtp = userService.sendOtp;
+export const verifyOtp = userService.verifyOtp;
 export const fetchUserProfile = userService.fetchUserProfile;
+
 export const fetchUserAddresses = userService.fetchUserAddresses;
 export const addUserAddress = userService.addAddress;
 export const setDefaultUserAddress = userService.setDefaultAddress;
@@ -32,5 +35,6 @@ export const fetchUserEmails = userService.fetchUserEmails;
 export const fetchAuthorization = userService.fetchAuthorization;
 export const updateAuthorization = userService.updateAuthorization;
 export const revokeAuthorization = userService.revokeAuthorization;
+export const resetSpentToday = userService.resetSpentToday;
 export const fetchMerchants = userService.fetchMerchants;
 export const updateMerchantSettings = userService.updateMerchantSettings;
