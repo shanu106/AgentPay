@@ -19,8 +19,7 @@ const AgentDocumentation = ({ isEmbedded = true, onClose }) => {
     { id: 'modules', label: '2. Subsystems & Modules', icon: Cpu },
     { id: 'merchants', label: '3. Merchant Ecosystem', icon: Store },
     { id: 'security', label: '4. Security & TOCTOU', icon: Shield },
-    { id: 'database', label: '5. DB Schema & APIs', icon: Database },
-    { id: 'demoscript', label: '6. Demo Video Script', icon: Video },
+    { id: 'database', label: '5. DB Schema & APIs', icon: Database }
   ];
 
   return (
@@ -271,38 +270,7 @@ const AgentDocumentation = ({ isEmbedded = true, onClose }) => {
           </div>
         )}
 
-        {/* ================= SECTION 6: DEMO SCRIPT ================= */}
-        {activeSection === 'demoscript' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '10px', padding: '14px' }}>
-              <div style={{ fontWeight: 700, color: '#93c5fd', fontSize: '0.9rem', marginBottom: '4px' }}>
-                🎬 3-Minute Video Walkthrough Script
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.5' }}>
-                Use this structured prompt sequence to present AgentPay to the Razorpay Buildathon jury.
-              </div>
-            </div>
-
-            <div style={{ background: 'rgba(0, 0, 0, 0.3)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#34d399' }}>🎯 The Hero Multi-Item Prompt:</span>
-                <button
-                  onClick={() => copyToClipboard('buy me a mechanical keyboard a Python for data science course and a chicken biryani', 'hero-prompt')}
-                  style={{ background: 'rgba(255, 255, 255, 0.08)', border: 'none', borderRadius: '6px', padding: '4px 10px', color: '#fff', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                >
-                  {copiedCode === 'hero-prompt' ? <Check size={12} color="#34d399" /> : <Copy size={12} />}
-                  {copiedCode === 'hero-prompt' ? 'Copied' : 'Copy Prompt'}
-                </button>
-              </div>
-              <pre style={{ margin: 0, padding: '10px 14px', background: 'rgba(0, 0, 0, 0.4)', borderRadius: '6px', color: '#93c5fd', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', overflowX: 'auto' }}>
-                buy me a mechanical keyboard a Python for data science course and a chicken biryani
-              </pre>
-              <div style={{ marginTop: '10px', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                • <strong>Result</strong>: Resolves 3 cross-store items (Keychron K2 ₹3,499 + Python Course ₹699 + Chicken Biryani ₹349 = ₹4,547), executes SBI NetBanking Razorpay capture, sends confirmation email, and triggers ElevenLabs voice response!
-              </div>
-            </div>
-          </div>
-        )}
+       
 
       </div>
     </div>
