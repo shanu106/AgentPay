@@ -117,6 +117,7 @@ Create file `Buying Agent/backend/.env`:
 | `GEMINI_API_KEY` | **Yes** | Google Gemini API Key for autonomous reasoning | `AIzaSy...` |
 | `RAZORPAY_KEY_ID` | **Yes** | Razorpay Test Key ID | `rzp_test_TWMrSC5dL0M41b` |
 | `RAZORPAY_KEY_SECRET` | **Yes** | Razorpay Test Key Secret | `D7505A4iy6RtGyR12ulGOLCc` |
+| `DATABASE_URL` | **Yes** | Postgresql DATABASE URL | `postgresql://localhost:5432/postgres` |
 | `PORT` | No | Server port (Default: `8001`) | `8001` |
 | `CLIENT_URL` | No | Buyer Frontend origin | `http://localhost:5174` |
 | `MERCHANT_API_BASE` | No | Course Platform backend URL | `http://localhost:8000/api` |
